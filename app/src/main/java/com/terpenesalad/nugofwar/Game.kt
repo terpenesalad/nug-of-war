@@ -85,6 +85,10 @@ class Game(
     private var projector = prefs.getBoolean("projector", true)
     private var xmas = prefs.getBoolean("xmas", true)
     private var commentary = prefs.getBoolean("commentary", true)
+    init {
+        sfx.uiEnabled = prefs.getBoolean("uiSounds", true)
+        sfx.gameEnabled = prefs.getBoolean("gameSounds", true)
+    }
 
     // lobby
     private val joined = booleanArrayOf(true, false, false, false)
@@ -245,7 +249,7 @@ class Game(
             val y = y0 + i * step
             if (inRect(t, cx - width / 2, y - 56, cx + width / 2, y + 22)) { idx = i; sfx.play(Sound.SELECT); return i }
         }
-        if (anyConfirm() || anyStart()) { sfx.play(Sound.SELECT); return idx }
+        if (anyConfirm() || anyStart()) { sfx.play(Sound.UI_OK); return idx }
         return -1
     }
 
@@ -301,18 +305,20 @@ class Game(
         "Projector Mode: " + if (projector) "ON" else "OFF",
         "Christmas Mode: " + if (xmas) "ON" else "OFF",
         "Streamer Commentary: " + if (commentary) "ON" else "OFF",
-        "Sound: " + if (sfx.enabled) "ON" else "OFF",
+        "Menu sounds: " + if (sfx.uiEnabled) "ON" else "OFF",
+        "Game sounds: " + if (sfx.gameEnabled) "ON" else "OFF",
         "Reset Controllers", "Back")
 
     private fun updateSettings(taps: List<FloatArray>) {
         if (anyBack()) { go(S_TITLE); idx = 3; return }
-        when (listMenu(6, 400f, 90f, 820f, taps)) {
+        when (listMenu(7, 380f, 86f, 820f, taps)) {
             0 -> { projector = !projector; prefs.edit().putBoolean("projector", projector).apply() }
             1 -> { xmas = !xmas; prefs.edit().putBoolean("xmas", xmas).apply(); if (xmas) sfx.play(Sound.JINGLE) }
             2 -> { commentary = !commentary; prefs.edit().putBoolean("commentary", commentary).apply() }
-            3 -> { sfx.enabled = !sfx.enabled }
-            4 -> { input.resetSlots(); floaters.add(Floater("Controllers reset: press A on each one in order", W / 2, 990f, Color.WHITE)) }
-            5 -> { go(S_TITLE); idx = 3 }
+            3 -> { sfx.uiEnabled = !sfx.uiEnabled; prefs.edit().putBoolean("uiSounds", sfx.uiEnabled).apply() }
+            4 -> { sfx.gameEnabled = !sfx.gameEnabled; prefs.edit().putBoolean("gameSounds", sfx.gameEnabled).apply() }
+            5 -> { input.resetSlots(); floaters.add(Floater("Controllers reset: press A on each one in order", W / 2, 990f, Color.WHITE)) }
+            6 -> { go(S_TITLE); idx = 3 }
         }
     }
 
@@ -369,7 +375,7 @@ class Game(
         snapshot()
         editRects.add(Plat(l, t, r, b))
         sel = editRects.size - 1
-        sfx.play(Sound.PICKUP, 0.6f)
+        sfx.play(Sound.UI_OK, 0.6f)
     }
 
     private fun deleteBox(i: Int) {
@@ -384,7 +390,7 @@ class Game(
         val p = editRects[i]
         snapshot()
         editRects.add(clampBox(p.l + 30f, p.t + 30f, p.r + 30f, p.b + 30f))
-        sfx.play(Sound.PICKUP, 0.6f); editNote("Copied")
+        sfx.play(Sound.UI_OK, 0.6f); editNote("Copied")
         return editRects.size - 1
     }
 
@@ -522,7 +528,7 @@ class Game(
             if (anchor != null) { anchor = null; return }
             saveWall(editSlot, editRects)
             wallCacheSlot = -1
-            sfx.play(Sound.PICKUP)
+            sfx.play(Sound.UI_OK)
             go(S_WALLMENU); idx = editSlot
         }
     }
@@ -569,7 +575,7 @@ class Game(
                 if (c.rightP) { colorIdx[p] = (colorIdx[p] + 1) % COLORS.size; sfx.play(Sound.SELECT) }
                 if (c.upP || c.throwP) { shapeIdx[p] = (shapeIdx[p] + SHAPE_NAMES.size - 1) % SHAPE_NAMES.size; sfx.play(Sound.SELECT) }
                 if (c.downP) { shapeIdx[p] = (shapeIdx[p] + 1) % SHAPE_NAMES.size; sfx.play(Sound.SELECT) }
-                if (c.confirmP || c.startP) { ready[p] = true; sfx.play(Sound.PICKUP) }
+                if (c.confirmP || c.startP) { ready[p] = true; sfx.play(Sound.UI_OK) }
                 if (c.backP) {
                     if (p > 0) joined[p] = false
                     else { go(S_ARENA); idx = arena; sfx.play(Sound.SELECT); return }
@@ -1799,7 +1805,7 @@ class Game(
         Gfx.label(c, "SETTINGS", W / 2, 200f, 90f, Color.WHITE, shadow = false)
         Gfx.label(c, "Projector Mode: pure black background so only the game lights up your wall", W / 2, 270f, 28f, MUTED, shadow = false)
         val items = settingsItems()
-        for (i in items.indices) menuItem(c, items[i], 400f + i * 90f, i == idx, 820f)
+        for (i in items.indices) menuItem(c, items[i], 380f + i * 86f, i == idx, 820f)
         Gfx.label(c, controllerStatus(), W / 2, 1000f, 26f, 0xFFAAAAAA.toInt(), shadow = false)
         drawSnowAndSanta(c)
     }

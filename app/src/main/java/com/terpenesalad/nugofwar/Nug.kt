@@ -44,7 +44,6 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
         }
     }
 
-    private class Puff(val x: Float, val y: Float, val r: Float)
 
     init {
         top = when (shape) { 1 -> -1.45f; 3 -> -1.3f; 2 -> -0.72f; else -> -0.82f }
@@ -63,210 +62,185 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
         if (t < peak) maxW * Math.pow(sin((t / peak) * PI.toFloat() / 2f).toDouble(), pow.toDouble()).toFloat()
         else { val u = (t - peak) / (1f - peak); maxW * (0.45f + 0.55f * sqrt(max(0f, 1f - u * u))) }
 
+    private class Calyx(val x: Float, val y: Float, val r: Float, val lean: Float)
+    private val mtx = android.graphics.Matrix()
+
+    /** A calyx: round base drawn up to a soft point, leaning outward like the real thing. */
+    private fun calyxPath(path: Path, k: Calyx, grow: Float) {
+        val r = k.r * grow
+        path.reset()
+        path.moveTo(0f, -1.3f * r)
+        path.cubicTo(0.28f * r, -1.02f * r, 1.0f * r, -0.58f * r, 1.0f * r, 0.04f * r)
+        path.cubicTo(1.0f * r, 0.62f * r, 0.56f * r, 1.0f * r, 0f, 1.0f * r)
+        path.cubicTo(-0.56f * r, 1.0f * r, -1.0f * r, 0.62f * r, -1.0f * r, 0.04f * r)
+        path.cubicTo(-1.0f * r, -0.58f * r, -0.28f * r, -1.02f * r, 0f, -1.3f * r)
+        path.close()
+        mtx.setRotate(k.lean); mtx.postTranslate(k.x, k.y); path.transform(mtx)
+    }
+
     private fun paint(c: Canvas) {
         c.translate(OX, OY)
         c.scale(REF, REF) // draw in units of body radius
         val rnd = Random(seed * 31 + shape * 7 + 3)
         fun rf(a: Float, b: Float) = a + rnd.nextFloat() * (b - a)
 
-        // ---- the silhouette: a core plus a ring of puffy lumps around its edge
-        val yTop: Float; val yBot = 0.6f; val peak: Float; val pow: Float; val maxW: Float
+        val yTop: Float; val yBot = 0.58f; val peak: Float; val pow: Float; val maxW: Float
         when (shape) {
-            1 -> { yTop = -1.4f; peak = 0.72f; pow = 1.1f; maxW = 0.7f }      // tall cola
-            2 -> { yTop = -0.74f; peak = 0.74f; pow = 0.85f; maxW = 0.97f }   // chunky pyramid
-            3 -> { yTop = -0.62f; peak = 0.55f; pow = 0.7f; maxW = 0.8f }     // foxtail base
-            else -> { yTop = -0.8f; peak = 0.5f; pow = 0.65f; maxW = 0.86f }  // dense round
+            1 -> { yTop = -1.3f; peak = 0.72f; pow = 1.1f; maxW = 0.7f }      // tall cola
+            2 -> { yTop = -0.66f; peak = 0.74f; pow = 0.85f; maxW = 0.95f }   // wide pyramid
+            3 -> { yTop = -0.55f; peak = 0.55f; pow = 0.7f; maxW = 0.8f }     // foxtail base
+            else -> { yTop = -0.72f; peak = 0.5f; pow = 0.65f; maxW = 0.85f } // dense round
         }
-        val n = 24
-        val right = ArrayList<FloatArray>()
-        for (i in 0..n) {
-            val t = i / n.toFloat()
-            val y = yTop + t * (yBot - yTop)
-            right.add(floatArrayOf(profile(t, peak, pow, maxW) * (0.94f + rnd.nextFloat() * 0.1f), y))
-        }
-        val ring = ArrayList<FloatArray>()
-        for (pt in right) ring.add(floatArrayOf(pt[0], pt[1]))
-        for (pt in right.asReversed()) ring.add(floatArrayOf(-pt[0], pt[1]))
         val cyMid = (yTop + yBot) / 2f
+        fun widthAt(y: Float) = profile(((y - yTop) / (yBot - yTop)).coerceIn(0f, 1f), peak, pow, maxW)
 
-        val core = Path()
-        for ((i, pt) in ring.withIndex()) {
-            val x = pt[0] * 0.8f; val y = cyMid + (pt[1] - cyMid) * 0.86f
-            if (i == 0) core.moveTo(x, y) else core.lineTo(x, y)
-        }
-        core.close()
-
-        val edge = ArrayList<Puff>()
-        var acc = 0f; var nextAt = 0f
-        for (i in 0 until ring.size) {
-            val p0 = ring[i]; val p1 = ring[(i + 1) % ring.size]
-            val seg = sqrt((p1[0] - p0[0]) * (p1[0] - p0[0]) + (p1[1] - p0[1]) * (p1[1] - p0[1]))
-            while (nextAt <= acc + seg) {
-                val f = if (seg > 0f) (nextAt - acc) / seg else 0f
-                val x = p0[0] + (p1[0] - p0[0]) * f; val y = p0[1] + (p1[1] - p0[1]) * f
-                val small = if (y < yTop + 0.35f) 0.8f else 1f
-                val rr = rf(0.25f, 0.34f) * small
-                val dx = -x; val dy = cyMid - y; val dl = max(0.001f, sqrt(dx * dx + dy * dy))
-                edge.add(Puff(x + dx / dl * rr * 0.55f, y + dy / dl * rr * 0.55f, rr))
-                nextAt += rr * 1.55f
+        // ---- calyxes laid in staggered rows, bottom to top: a clear, repeating structure
+        val rows = ArrayList<ArrayList<Calyx>>()
+        var y = yBot - 0.16f
+        var row = 0
+        while (y > yTop + 0.06f) {
+            val w = widthAt(y)
+            val r = 0.17f + 0.07f * (w / maxW)
+            val step = r * 1.7f
+            var count = max(1, ((2f * w - r * 0.4f) / step).toInt() + 1)
+            if (row % 2 == 1 && count > 1) count -= 1
+            val span = (count - 1) * step
+            val list = ArrayList<Calyx>()
+            for (i in 0 until count) {
+                val x = -span / 2f + i * step + rf(-0.015f, 0.015f)
+                list.add(Calyx(x, y + rf(-0.015f, 0.015f), r, (x * 30f).coerceIn(-28f, 28f)))
             }
-            acc += seg
+            rows.add(list)
+            y -= r * 1.22f; row++
         }
-        // foxtails: little stacks of lumps climbing off the top
-        if (shape == 3) {
-            for (sx in floatArrayOf(-0.3f, 0.02f, 0.32f)) {
-                var x = sx + rf(-0.05f, 0.05f); var y = yTop + 0.05f
-                val h = 2 + rnd.nextInt(2)
-                for (k in 0 until h) {
-                    val rr = 0.21f - k * 0.03f
-                    edge.add(Puff(x, y, rr))
-                    y -= rr * 1.1f; x += rf(-0.05f, 0.05f) + sx * 0.12f
+        rows.add(arrayListOf(Calyx(rf(-0.03f, 0.03f), yTop + 0.1f, 0.15f, 0f)))  // the crown
+        if (shape == 3) {                                  // foxtails: thin spires of small calyxes
+            for (sx in floatArrayOf(-0.26f, 0.04f, 0.3f)) {
+                var x = sx; var yy = yTop - 0.02f
+                for (k in 0 until 3) {
+                    val r = 0.13f - k * 0.018f
+                    rows.add(arrayListOf(Calyx(x, yy, r, sx * 40f)))
+                    yy -= r * 1.3f; x += sx * 0.16f
                 }
             }
         }
-        val inner = ArrayList<Puff>()
-        run {
-            var y = yTop + 0.38f
-            while (y < yBot - 0.15f) {
-                val t = (y - yTop) / (yBot - yTop)
-                val w = profile(t, peak, pow, maxW) * 0.55f
-                var x = -w + rf(0f, 0.12f)
-                while (x <= w) { inner.add(Puff(x, y + rf(-0.05f, 0.05f), rf(0.24f, 0.31f))); x += rf(0.42f, 0.5f) }
-                y += rf(0.36f, 0.42f)
-            }
-        }
+        val all = rows.flatten()
 
-        val sil = Path(core)
+        // the silhouette: every calyx unioned with a core so there are no holes
+        val sil = Path()
+        val core = Path()
+        run {
+            var first = true
+            var yy = yTop + 0.1f
+            val pts = ArrayList<FloatArray>()
+            while (yy <= yBot) { pts.add(floatArrayOf(widthAt(yy) * 0.78f, yy)); yy += 0.08f }
+            for (pt in pts) { if (first) { core.moveTo(pt[0], pt[1]); first = false } else core.lineTo(pt[0], pt[1]) }
+            for (pt in pts.asReversed()) core.lineTo(-pt[0], pt[1])
+            core.close()
+        }
+        sil.set(core)
         val tmp = Path()
-        for (pf in edge) { tmp.reset(); tmp.addCircle(pf.x, pf.y, pf.r, Path.Direction.CW); sil.op(tmp, Path.Op.UNION) }
+        for (k in all) { calyxPath(tmp, k, 1.0f); sil.op(tmp, Path.Op.UNION) }
 
         val brown = isBrown()
-        val ink = Gfx.mix(Gfx.shade(color, 0.34f), 0xFF0E1A0C.toInt(), if (brown) 0.15f else 0.35f)
-        val dark = Gfx.shade(color, 0.72f)
-        val leafCol = if (brown) Gfx.mix(Gfx.shade(color, 0.7f), 0xFF5A5A2E.toInt(), 0.35f)
-                      else Gfx.mix(Gfx.shade(color, 0.7f), 0xFF2F6A2A.toInt(), 0.6f)
+        val ink = Gfx.mix(Gfx.shade(color, 0.3f), 0xFF0B140A.toInt(), if (brown) 0.1f else 0.3f)
+        val toneLight = Gfx.mix(color, Color.WHITE, 0.16f)
+        val toneMid = color
+        val toneShade = Gfx.shade(color, 0.8f)
+        val toneDeep = Gfx.shade(color, 0.64f)
+        val gap = Gfx.shade(color, 0.48f)
+        val leafA = if (brown) Gfx.mix(Gfx.shade(color, 0.75f), 0xFF5C5A30.toInt(), 0.4f) else Gfx.mix(Gfx.shade(color, 0.72f), 0xFF3A7A34.toInt(), 0.55f)
+        val leafB = Gfx.shade(leafA, 0.72f)
+        val pistilCol = if (brown) 0xFF6E4C2C.toInt() else 0xFFD08A48.toInt()
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
         val path = Path()
 
-        // ---- fan leaves and curly tendrils behind the bud
-        val baseY = yBot - 0.05f
-        val leafSpots = ArrayList<FloatArray>()  // x, y, size, angle, leaflets
-        val lw = right[(n * 0.75f).toInt()][0] * 0.78f
-        leafSpots.add(floatArrayOf(lw, baseY - rf(0.2f, 0.32f), rf(0.66f, 0.74f), rf(5f, 35f), 7f))
-        leafSpots.add(floatArrayOf(-lw, baseY - rf(0.2f, 0.32f), rf(0.66f, 0.74f), 180f - rf(5f, 35f), 7f))
-        if (rnd.nextBoolean() || shape == 1) {
-            val side = if (rnd.nextBoolean()) 1f else -1f
-            val yy = yTop + (yBot - yTop) * rf(0.3f, 0.45f)
-            val ww = profile((yy - yTop) / (yBot - yTop), peak, pow, maxW) * 0.7f
-            leafSpots.add(floatArrayOf(side * ww, yy, rf(0.5f, 0.58f), if (side > 0) rf(-40f, -15f) else 180f + rf(15f, 40f), 5f))
-        }
-        if (rnd.nextFloat() < 0.5f) leafSpots.add(floatArrayOf(rf(-0.1f, 0.1f), baseY, rf(0.4f, 0.46f), rf(80f, 100f), 5f))
-        for (l in leafSpots) fanLeaf(c, p, path, l[0], l[1], l[2], l[3], l[4].toInt(), leafCol, ink)
+        // ---- one fan leaf behind, composed to one side, and a smaller one opposite
+        val side = if (seed % 2 == 0) 1f else -1f
+        val by = yBot - 0.28f
+        fanLeaf(c, p, path, side * widthAt(by) * 0.55f, by, 0.66f, if (side > 0) -22f else 202f, 7, leafA, leafB, ink)
+        val sy = yBot - 0.1f
+        fanLeaf(c, p, path, -side * widthAt(sy) * 0.6f, sy, 0.42f, if (side > 0) 200f else -20f, 5, leafA, leafB, ink)
 
-        val curls = 2 + rnd.nextInt(3)
-        for (i in 0 until curls) {
-            val side = if (i % 2 == 0) 1f else -1f
-            val x0 = side * rf(0.15f, 0.55f); val y0 = baseY - 0.05f
-            path.reset()
-            path.moveTo(x0, y0)
-            path.cubicTo(x0 + side * 0.18f, y0 + 0.22f, x0 + side * 0.42f, y0 + 0.2f, x0 + side * rf(0.36f, 0.46f), y0 + rf(-0.02f, 0.06f))
-            p.style = Paint.Style.STROKE
-            p.color = ink; p.strokeWidth = 0.085f; c.drawPath(path, p)
-            p.color = leafCol; p.strokeWidth = 0.04f; c.drawPath(path, p)
-        }
-
-        // ---- body: thick ink outline, then lumps shaded inside the outline
-        p.style = Paint.Style.STROKE; p.color = ink; p.strokeWidth = 0.13f
+        // ---- body
+        p.style = Paint.Style.STROKE; p.color = ink; p.strokeWidth = 0.12f
         c.drawPath(sil, p)
-        p.style = Paint.Style.FILL; c.drawPath(sil, p)
-
-        c.save()
-        c.clipPath(sil)
-        p.color = dark; c.drawPath(sil, p)
-        val all = ArrayList<Puff>(edge.size + inner.size)
-        all.addAll(edge); all.addAll(inner)
-        all.sortBy { it.y }
-        for (pf in all) {
-            val lit = (-pf.x * 0.3f - (pf.y - cyMid) * 0.25f).coerceIn(-0.3f, 0.35f)
-            p.color = Gfx.mix(color, dark, 0.85f)
-            c.drawCircle(pf.x + pf.r * 0.08f, pf.y + pf.r * 0.1f, pf.r, p)
-            p.color = if (lit >= 0) Gfx.mix(color, Color.WHITE, lit * 0.35f) else Gfx.mix(color, dark, -lit * 1.3f)
-            c.drawCircle(pf.x - pf.r * 0.06f, pf.y - pf.r * 0.08f, pf.r * 0.86f, p)
-            if (lit > 0.05f) {
-                p.color = Gfx.alpha(Gfx.mix(color, Color.WHITE, 0.45f), 0.45f)
-                c.drawOval(pf.x - pf.r * 0.55f, pf.y - pf.r * 0.6f, pf.x - pf.r * 0.05f, pf.y - pf.r * 0.25f, p)
-            }
+        p.style = Paint.Style.FILL; p.color = gap
+        c.drawPath(sil, p)
+        c.save(); c.clipPath(sil)
+        // draw top rows first so lower calyxes overlap the ones above, like scales
+        for (k in all.sortedBy { it.y }) {
+            val score = -k.x * 0.7f - (k.y - cyMid) * 0.45f
+            val face = when { score > 0.16f -> toneLight; score > -0.22f -> toneMid; else -> toneShade }
+            val half = when (face) { toneLight -> toneMid; toneMid -> toneShade; else -> toneDeep }
+            calyxPath(path, k, 1.12f); p.color = gap; c.drawPath(path, p)
+            calyxPath(path, k, 1.0f); p.color = face; c.drawPath(path, p)
+            // hard-edged shadow on the right half, split along a curved midline
+            c.save(); c.clipPath(path)
+            c.translate(k.x, k.y); c.rotate(k.lean)
+            val r = k.r
+            tmp.reset()
+            tmp.moveTo(0f, -1.35f * r)
+            tmp.quadTo(0.3f * r, -0.1f * r, 0.12f * r, 1.1f * r)
+            tmp.lineTo(1.2f * r, 1.1f * r); tmp.lineTo(1.2f * r, -1.35f * r); tmp.close()
+            p.color = half; c.drawPath(tmp, p)
+            c.restore()
         }
         c.restore()
-
-        // ---- crease curls between lumps (the cartoon "C" lines), and speckles
-        p.style = Paint.Style.STROKE; p.color = Gfx.alpha(ink, 0.9f)
-        val oval = RectF()
-        for (pf in all) {
-            if (rnd.nextFloat() < 0.5f) continue
-            val inside = sqrt(pf.x * pf.x + (pf.y - cyMid) * (pf.y - cyMid))
-            if (edge.contains(pf) && inside > maxW * 0.9f && rnd.nextFloat() < 0.6f) continue
-            p.strokeWidth = rf(0.035f, 0.05f)
-            val rr = pf.r * rf(0.7f, 0.85f)
-            oval.set(pf.x - rr, pf.y - rr, pf.x + rr, pf.y + rr)
-            c.drawArc(oval, rf(10f, 60f), rf(80f, 130f), false, p)
-        }
-        p.style = Paint.Style.FILL; p.color = Gfx.alpha(ink, 0.55f)
-        for (i in 0 until 12 + rnd.nextInt(6)) {
-            val pf = inner.getOrNull(rnd.nextInt(max(1, inner.size))) ?: break
-            c.drawCircle(pf.x + rf(-0.12f, 0.12f), pf.y + rf(-0.1f, 0.1f), rf(0.014f, 0.024f), p)
-        }
-        // outline again on top so lumps stay crisp
-        p.style = Paint.Style.STROKE; p.color = ink; p.strokeWidth = 0.06f
+        p.style = Paint.Style.STROKE; p.color = ink; p.strokeWidth = 0.055f
         c.drawPath(sil, p)
 
-        // a sugar-leaf tip tucked in front at one side
-        val ts = if (rnd.nextBoolean()) 1f else -1f
-        val ty = yTop + (yBot - yTop) * rf(0.55f, 0.75f)
-        val tw = profile((ty - yTop) / (yBot - yTop), peak, pow, maxW) * 0.75f
-        leaflet(c, p, path, ts * tw, ty, rf(0.3f, 0.36f), if (ts > 0) rf(-25f, 10f) else 180f + rf(-10f, 25f), leafCol, ink)
+        // ---- a single sugar leaf tucked against one side
+        val ty = yTop + (yBot - yTop) * 0.6f
+        leaflet(c, p, path, side * widthAt(ty) * 0.82f, ty, 0.32f, if (side > 0) -8f else 188f, leafA, leafB, ink)
+
+        // ---- pistils: a handful, from calyx tips, all the same gentle curve
+        p.style = Paint.Style.STROKE; p.strokeWidth = 0.03f; p.color = pistilCol
+        val upper = all.filter { it.y < cyMid + 0.1f }.shuffled(rnd).take(4 + rnd.nextInt(2))
+        for (k in upper) {
+            val a = Math.toRadians((-90f + k.lean * 1.4f).toDouble())
+            val tx = k.x + sin(Math.toRadians(k.lean.toDouble())).toFloat() * k.r * 1.25f
+            val tyy = k.y - cos(Math.toRadians(k.lean.toDouble())).toFloat() * k.r * 1.25f
+            val len = 0.24f
+            val ex = tx + cos(a).toFloat() * len; val ey = tyy + sin(a).toFloat() * len
+            val bend = if (k.x >= 0) 1f else -1f
+            path.reset(); path.moveTo(tx, tyy)
+            path.quadTo((tx + ex) / 2 + bend * 0.07f, (tyy + ey) / 2, ex, ey)
+            c.drawPath(path, p)
+        }
     }
 
+    /** Half width of the bud at height t (0 = top, 1 = bottom). Rounded top, full shoulders, flat-ish base. */
     private fun isBrown(): Boolean {
         val r = Color.red(color); val g = Color.green(color); val b = Color.blue(color)
         return r > g * 0.95f && r > b * 1.3f
     }
 
-    /** One serrated leaflet pointing along +x from (x, y). */
-    private fun leaflet(c: Canvas, p: Paint, path: Path, x: Float, y: Float, len: Float, ang: Float, col: Int, ink: Int) {
+    /** One leaflet pointing along +x: lance shaped, finely toothed, split light / dark along the midrib. */
+    private fun leaflet(c: Canvas, p: Paint, path: Path, x: Float, y: Float, len: Float, ang: Float, a: Int, b: Int, ink: Int) {
         c.save(); c.translate(x, y); c.rotate(ang)
-        val wid = len * 0.2f
-        val steps = 9
+        val wid = len * 0.18f
+        val steps = 12
+        fun w(f: Float, j: Int) = wid * Math.pow(sin(f * PI).toDouble(), 0.65).toFloat() * (if (j % 2 == 0) 0.86f else 1f)
         path.reset(); path.moveTo(0f, 0f)
-        for (j in 1 until steps) {
-            val f = j / steps.toFloat()
-            val w = wid * Math.pow(sin(f * PI).toDouble(), 0.7).toFloat() * (if (j % 2 == 0) 0.72f else 1f)
-            path.lineTo(f * len, -w)
-        }
+        for (j in 1 until steps) { val f = j / steps.toFloat(); path.lineTo(f * len, -w(f, j)) }
         path.lineTo(len, 0f)
-        for (j in steps - 1 downTo 1) {
-            val f = j / steps.toFloat()
-            val w = wid * Math.pow(sin(f * PI).toDouble(), 0.7).toFloat() * (if (j % 2 == 0) 0.72f else 1f)
-            path.lineTo(f * len, w)
-        }
+        for (j in steps - 1 downTo 1) { val f = j / steps.toFloat(); path.lineTo(f * len, w(f, j)) }
         path.close()
-        p.style = Paint.Style.STROKE; p.color = ink; p.strokeWidth = 0.06f; c.drawPath(path, p)
-        p.style = Paint.Style.FILL; p.color = col; c.drawPath(path, p)
-        p.style = Paint.Style.STROKE; p.strokeWidth = 0.018f; p.color = Gfx.alpha(Gfx.shade(col, 0.7f), 0.9f)
-        c.drawLine(0.02f, 0f, len * 0.82f, 0f, p)
+        p.style = Paint.Style.STROKE; p.color = ink; p.strokeWidth = 0.05f; c.drawPath(path, p)
+        p.style = Paint.Style.FILL; p.color = a; c.drawPath(path, p)
+        c.save(); c.clipPath(path); p.color = b; c.drawRect(0f, 0f, len, wid * 1.2f, p); c.restore()
         c.restore()
     }
 
-    /** A cannabis fan leaf: [count] leaflets spread from one stem point, the middle one longest. */
-    private fun fanLeaf(c: Canvas, p: Paint, path: Path, x: Float, y: Float, size: Float, ang: Float, count: Int, col: Int, ink: Int) {
+    /** A fan leaf: leaflets fanned from one point, longest in the middle. */
+    private fun fanLeaf(c: Canvas, p: Paint, path: Path, x: Float, y: Float, size: Float, ang: Float, count: Int, a: Int, b: Int, ink: Int) {
         c.save(); c.translate(x, y); c.rotate(ang)
         val half = count / 2
-        // outer leaflets first so the middle one sits on top
-        val order = (0 until count).sortedByDescending { abs(it - half) }
-        for (i in order) {
+        for (i in (0 until count).sortedByDescending { abs(it - half) }) {
             val k = i - half
-            leaflet(c, p, path, size * 0.08f, 0f, size * (1f - 0.17f * abs(k)), k * (78f / half), col, ink)
+            leaflet(c, p, path, 0f, 0f, size * (1f - 0.16f * abs(k)), k * (74f / half), a, b, ink)
         }
         c.restore()
     }
