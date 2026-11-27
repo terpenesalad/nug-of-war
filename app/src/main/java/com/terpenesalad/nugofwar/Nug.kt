@@ -100,7 +100,7 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
         var row = 0
         while (y > yTop + 0.06f) {
             val w = widthAt(y)
-            val r = 0.17f + 0.07f * (w / maxW)
+            val r = 0.19f + 0.07f * (w / maxW)
             val step = r * 1.7f
             var count = max(1, ((2f * w - r * 0.4f) / step).toInt() + 1)
             if (row % 2 == 1 && count > 1) count -= 1
@@ -159,9 +159,9 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
         // ---- one fan leaf behind, composed to one side, and a smaller one opposite
         val side = if (seed % 2 == 0) 1f else -1f
         val by = yBot - 0.28f
-        fanLeaf(c, p, path, side * widthAt(by) * 0.55f, by, 0.66f, if (side > 0) -22f else 202f, 7, leafA, leafB, ink)
+        fanLeaf(c, p, path, side * widthAt(by) * 0.86f, by, 0.74f, if (side > 0) -30f else 210f, 7, leafA, leafB, ink)
         val sy = yBot - 0.1f
-        fanLeaf(c, p, path, -side * widthAt(sy) * 0.6f, sy, 0.42f, if (side > 0) 200f else -20f, 5, leafA, leafB, ink)
+        fanLeaf(c, p, path, -side * widthAt(sy) * 0.85f, sy, 0.5f, if (side > 0) 196f else -16f, 5, leafA, leafB, ink)
 
         // ---- body
         p.style = Paint.Style.STROKE; p.color = ink; p.strokeWidth = 0.12f
@@ -196,13 +196,13 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
         leaflet(c, p, path, side * widthAt(ty) * 0.82f, ty, 0.32f, if (side > 0) -8f else 188f, leafA, leafB, ink)
 
         // ---- pistils: a handful, from calyx tips, all the same gentle curve
-        p.style = Paint.Style.STROKE; p.strokeWidth = 0.03f; p.color = pistilCol
-        val upper = all.filter { it.y < cyMid + 0.1f }.shuffled(rnd).take(4 + rnd.nextInt(2))
+        p.style = Paint.Style.STROKE; p.strokeWidth = 0.026f; p.color = Gfx.alpha(pistilCol, 0.85f)
+        val upper = all.filter { it.y < cyMid + 0.1f && it.y > yTop + 0.15f }.shuffled(rnd).take(3)
         for (k in upper) {
-            val a = Math.toRadians((-90f + k.lean * 1.4f).toDouble())
+            val a = Math.toRadians((-90f + (if (k.x >= 0) 55f else -55f) + k.lean).toDouble())
             val tx = k.x + sin(Math.toRadians(k.lean.toDouble())).toFloat() * k.r * 1.25f
             val tyy = k.y - cos(Math.toRadians(k.lean.toDouble())).toFloat() * k.r * 1.25f
-            val len = 0.24f
+            val len = 0.15f
             val ex = tx + cos(a).toFloat() * len; val ey = tyy + sin(a).toFloat() * len
             val bend = if (k.x >= 0) 1f else -1f
             path.reset(); path.moveTo(tx, tyy)
