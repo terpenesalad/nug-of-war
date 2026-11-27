@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#0C0E0D" android:pathData="M0,0h320v180h-320z" />
+    <!-- wall -->
+    <path android:fillColor="#55564F" android:pathData="M150,30h20v120h-20z" />
+    <path android:strokeColor="#2A2B28" android:strokeWidth="2"
+        android:pathData="M150,50h20 M150,70h20 M150,90h20 M150,110h20 M150,130h20" />
+    <!-- left nug (green) -->
+    <path android:strokeColor="#1A1B1A" android:strokeWidth="5" android:strokeLineCap="round"
+        android:pathData="M68,122 L62,140 M92,122 L98,140" />
+    <path android:fillColor="#8DB580" android:strokeColor="#3E5538" android:strokeWidth="3"
+        android:pathData="M80,60 a16,16 0 0 1 18,10 a16,16 0 0 1 8,24 a16,16 0 0 1 -14,26 a16,16 0 0 1 -24,0 a16,16 0 0 1 -14,-26 a16,16 0 0 1 8,-24 a16,16 0 0 1 18,-10 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M78,90 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 M94,90 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" />
+    <path android:fillColor="#111111" android:pathData="M81,91 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M97,91 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+    <!-- right nug (purple) -->
+    <path android:strokeColor="#1A1B1A" android:strokeWidth="5" android:strokeLineCap="round"
+        android:pathData="M228,122 L222,140 M252,122 L258,140" />
+    <path android:fillColor="#9D8CC4" android:strokeColor="#4A4260" android:strokeWidth="3"
+        android:pathData="M240,60 a16,16 0 0 1 18,10 a16,16 0 0 1 8,24 a16,16 0 0 1 -14,26 a16,16 0 0 1 -24,0 a16,16 0 0 1 -14,-26 a16,16 0 0 1 8,-24 a16,16 0 0 1 18,-10 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M232,90 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 M248,90 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" />
+    <path android:fillColor="#111111" android:pathData="M229,91 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M245,91 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+</vector>
