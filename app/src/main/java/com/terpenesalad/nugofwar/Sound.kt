@@ -17,6 +17,7 @@ class Sound(context: Context) {
         const val SHOOT = 0; const val HIT = 1; const val POP = 2; const val THUD = 3
         const val PICKUP = 4; const val WAVE = 5; const val DASH = 6; const val OUCH = 7
         const val SELECT = 8; const val WIN = 9; const val LOSE = 10; const val JINGLE = 11
+        const val BOOM = 12; const val CLANG = 13; const val SWISH = 14; const val JUMP = 15
         private const val RATE = 22050
     }
 
@@ -28,12 +29,12 @@ class Sound(context: Context) {
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
         ).build()
-    private val ids = IntArray(12)
-    private val lastPlay = LongArray(12)
+    private val ids = IntArray(16)
+    private val lastPlay = LongArray(16)
     @Volatile var enabled = true
 
     init {
-        val dir = File(context.cacheDir, "sfx_v2").apply { mkdirs() }
+        val dir = File(context.cacheDir, "sfx_v3").apply { mkdirs() }
         val rnd = Random(7)
         fun make(id: Int, dur: Float, fn: (Float, Float) -> Float) {
             val f = File(dir, "s$id.wav")
@@ -60,6 +61,10 @@ class Sound(context: Context) {
             val local = p * notes.size - seg
             (sn(t, notes[seg]) * 0.5f + sn(t, notes[seg] * 2.01f) * 0.25f) * 0.35f * (1 - local) * (if (seg == 2 || seg == 5) 0.3f else 1f)
         }
+        make(BOOM, 0.55f) { t, p -> (noise() * 0.7f + sn(t, 60f - 30f * p) * 0.5f) * (1 - p) * (1 - p) }
+        make(CLANG, 0.3f) { t, p -> (sn(t, 1250f) * 0.4f + sn(t, 1870f) * 0.3f + sn(t, 2630f) * 0.15f) * (1 - p) * (1 - p) }
+        make(SWISH, 0.12f) { _, p -> noise() * 0.25f * sin(PI * p).toFloat() }
+        make(JUMP, 0.1f) { t, p -> sq(t, 300f + 500f * p) * 0.15f * (1 - p) }
         make(LOSE, 0.8f) { t, p -> sq(t, 330f - 200f * p) * 0.22f * (1 - p) }
     }
 

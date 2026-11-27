@@ -13,21 +13,21 @@ import kotlin.math.sqrt
 class Ctl {
     var mx = 0f; var my = 0f
     var ax = 0f; var ay = 0f
-    var fire = false
-    var dash = false
-    var dashP = false
+    var jump = false; var jumpP = false
+    var attack = false; var attackP = false
+    var block = false; var blockP = false
+    var throwP = false
     var confirmP = false
     var backP = false
     var startP = false
     var upP = false; var downP = false; var leftP = false; var rightP = false
-    var altP = false
     var hasPad = false
     var padName = ""
 
-    // previous raw states for edge detection
-    internal var pDash = false; internal var pConfirm = false; internal var pBack = false
+    internal var pJump = false; internal var pAttack = false; internal var pBlock = false; internal var pThrow = false
+    internal var pConfirm = false; internal var pBack = false
     internal var pStart = false; internal var pUp = false; internal var pDown = false
-    internal var pLeft = false; internal var pRight = false; internal var pAlt = false
+    internal var pLeft = false; internal var pRight = false
 }
 
 private class Pad(val deviceId: Int) {
@@ -51,15 +51,16 @@ private class TouchPtr(val role: Int, val player: Int, val ox: Float, val oy: Fl
 class InputHub(context: Context) : InputManager.InputDeviceListener {
     companion object {
         const val ROLE_STICK = 0
-        const val ROLE_FIRE = 1
-        const val ROLE_DASH = 2
-        // Touch layout (virtual 1920x1080 coordinates)
-        val FIRE_X = floatArrayOf(790f, 1130f)
-        val FIRE_Y = 900f
-        val FIRE_R = 105f
-        val DASH_X = floatArrayOf(610f, 1310f)
-        val DASH_Y = 990f
-        val DASH_R = 70f
+        const val ROLE_JUMP = 1
+        const val ROLE_HIT = 2
+        const val ROLE_BLOCK = 3
+        const val PLAYERS = 4
+        // Touch layout (virtual 1920x1080 coordinates), for player 1; player 2 is mirrored
+        val BTN_X = floatArrayOf(0f, 830f, 660f, 720f)
+        val BTN_Y = floatArrayOf(0f, 930f, 990f, 810f)
+        val BTN_R = floatArrayOf(0f, 95f, 70f, 58f)
+        val BTN_LABEL = arrayOf("", "JUMP", "HIT", "BLOCK")
+        fun btnX(p: Int, role: Int) = if (p == 0) BTN_X[role] else Game.W - BTN_X[role]
         const val STICK_RANGE = 120f
         private const val DEAD = 0.22f
     }
@@ -67,7 +68,7 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
     private val im = context.getSystemService(Context.INPUT_SERVICE) as InputManager
     private val lock = Any()
     private val pads = HashMap<Int, Pad>()
-    val slot = intArrayOf(-1, -1)      // deviceId per player slot
+    val slot = intArrayOf(-1, -1, -1, -1)      // deviceId per player slot
     private val keys = HashSet<Int>()  // keyboard / remote keys held
     private val touches = HashMap<Int, TouchPtr>()
     private val taps = ArrayList<FloatArray>()
@@ -75,7 +76,7 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
     @Volatile var lastTouchMs = 0L
     @Volatile var disconnectFlag = false
 
-    val ctl = arrayOf(Ctl(), Ctl())
+    val ctl = Array(PLAYERS) { Ctl() }
 
     init {
         im.registerInputDeviceListener(this, null)
@@ -93,7 +94,7 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
         val r = ArrayList(taps); taps.clear(); r
     }
 
-    fun resetSlots() = synchronized(lock) { slot[0] = -1; slot[1] = -1 }
+    fun resetSlots() = synchronized(lock) { for (i in slot.indices) slot[i] = -1 }
 
     fun slotLabel(p: Int): String = synchronized(lock) {
         val id = slot[p]
@@ -113,8 +114,9 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
     private fun padFor(dev: InputDevice, claim: Boolean): Pad? {
         val id = dev.id
         val pad = pads.getOrPut(id) { Pad(id).also { it.name = dev.name ?: "Controller" } }
-        if (slot[0] != id && slot[1] != id && claim) {
-            if (slot[0] < 0) slot[0] = id else if (slot[1] < 0) slot[1] = id
+        if (claim && slot.none { it == id }) {
+            val free = slot.indexOfFirst { it < 0 }
+            if (free >= 0) slot[free] = id
         }
         return pad
     }
@@ -124,7 +126,7 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
     override fun onInputDeviceRemoved(deviceId: Int) {
         synchronized(lock) {
             pads.remove(deviceId)
-            for (i in 0..1) if (slot[i] == deviceId) { slot[i] = -1; disconnectFlag = true }
+            for (i in slot.indices) if (slot[i] == deviceId) { slot[i] = -1; disconnectFlag = true }
         }
     }
 
@@ -209,9 +211,12 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
         val p = if (x < Game.W / 2) 0 else 1
         val inner = if (p == 0) x > 520f else x < Game.W - 520f
         if (!inner) return TouchPtr(ROLE_STICK, p, x, y)
-        val df = dist(x, y, FIRE_X[p], FIRE_Y)
-        val dd = dist(x, y, DASH_X[p], DASH_Y)
-        return TouchPtr(if (dd < df && dd < DASH_R * 1.4f) ROLE_DASH else ROLE_FIRE, p, x, y)
+        var best = ROLE_JUMP; var bd = Float.MAX_VALUE
+        for (role in 1..3) {
+            val d = dist(x, y, btnX(p, role), BTN_Y[role]) / BTN_R[role]
+            if (d < bd) { bd = d; best = role }
+        }
+        return TouchPtr(best, p, x, y)
     }
 
     private fun dist(ax: Float, ay: Float, bx: Float, by: Float): Float {
@@ -221,6 +226,11 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
     /** Touch stick vectors for drawing: [ox, oy, x, y] per player or null. */
     fun touchStick(p: Int): FloatArray? = synchronized(lock) {
         touches.values.firstOrNull { it.role == ROLE_STICK && it.player == p }?.let { floatArrayOf(it.ox, it.oy, it.x, it.y) }
+    }
+
+    /** Any one finger on screen as [downX, downY, x, y], used by the wall editor. */
+    fun rawTouch(): FloatArray? = synchronized(lock) {
+        touches.values.firstOrNull()?.let { floatArrayOf(it.ox, it.oy, it.x, it.y) }
     }
 
     fun touchHeld(p: Int, role: Int): Boolean = synchronized(lock) {
@@ -233,11 +243,11 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
 
     fun poll() {
         synchronized(lock) {
-            for (p in 0..1) {
+            for (p in 0 until PLAYERS) {
                 val c = ctl[p]
                 var mx = 0f; var my = 0f; var ax = 0f; var ay = 0f
-                var fire = false; var dash = false; var confirm = false; var back = false
-                var start = false; var alt = false
+                var jump = false; var attack = false; var block = false; var thr = false
+                var confirm = false; var back = false; var start = false
                 var nUp = false; var nDown = false; var nLeft = false; var nRight = false
 
                 // keyboard / TV remote
@@ -246,29 +256,28 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
                     if (k(KeyEvent.KEYCODE_D)) mx += 1f
                     if (k(KeyEvent.KEYCODE_W)) my -= 1f
                     if (k(KeyEvent.KEYCODE_S)) my += 1f
-                    fire = fire || k(KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_F)
-                    dash = dash || k(KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_G)
-                    confirm = confirm || k(KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_F)
-                    alt = alt || k(KeyEvent.KEYCODE_Q)
-                    back = back || k(KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_DEL)
-                    start = start || k(KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_P, KeyEvent.KEYCODE_MENU)
-                } else {
+                    jump = k(KeyEvent.KEYCODE_SPACE)
+                    attack = k(KeyEvent.KEYCODE_F, KeyEvent.KEYCODE_J)
+                    block = k(KeyEvent.KEYCODE_G, KeyEvent.KEYCODE_K)
+                    thr = k(KeyEvent.KEYCODE_H, KeyEvent.KEYCODE_L)
+                    confirm = jump
+                    back = k(KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_DEL)
+                    start = k(KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_P, KeyEvent.KEYCODE_MENU)
+                } else if (p == 1) {
                     if (k(KeyEvent.KEYCODE_DPAD_LEFT)) mx -= 1f
                     if (k(KeyEvent.KEYCODE_DPAD_RIGHT)) mx += 1f
                     if (k(KeyEvent.KEYCODE_DPAD_UP)) my -= 1f
                     if (k(KeyEvent.KEYCODE_DPAD_DOWN)) my += 1f
-                    val ok = k(KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DPAD_CENTER)
-                    fire = fire || ok || k(KeyEvent.KEYCODE_CTRL_RIGHT, KeyEvent.KEYCODE_NUMPAD_0)
-                    dash = dash || k(KeyEvent.KEYCODE_SHIFT_RIGHT, KeyEvent.KEYCODE_SLASH)
-                    confirm = confirm || ok
-                    alt = alt || k(KeyEvent.KEYCODE_PERIOD)
+                    jump = k(KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_NUMPAD_0)
+                    attack = k(KeyEvent.KEYCODE_CTRL_RIGHT, KeyEvent.KEYCODE_NUMPAD_1, KeyEvent.KEYCODE_PERIOD)
+                    block = k(KeyEvent.KEYCODE_SHIFT_RIGHT, KeyEvent.KEYCODE_NUMPAD_2, KeyEvent.KEYCODE_SLASH)
+                    thr = k(KeyEvent.KEYCODE_NUMPAD_3, KeyEvent.KEYCODE_SEMICOLON)
+                    confirm = jump
                 }
-                if (mx != 0f || my != 0f) {
-                    if (my < 0) nUp = true
-                    if (my > 0) nDown = true
-                    if (mx < 0) nLeft = true
-                    if (mx > 0) nRight = true
-                }
+                if (my < 0) nUp = true
+                if (my > 0) nDown = true
+                if (mx < 0) nLeft = true
+                if (mx > 0) nRight = true
 
                 // gamepad
                 val pad = if (slot[p] >= 0) pads[slot[p]] else null
@@ -288,20 +297,21 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
                     if (py > 0.55f) nDown = true
                     if (px < -0.55f) nLeft = true
                     if (px > 0.55f) nRight = true
-                    if (sqrt(pad.rx * pad.rx + pad.ry * pad.ry) > 0.35f) { ax = pad.rx; ay = pad.ry }
+                    if (sqrt(pad.rx * pad.rx + pad.ry * pad.ry) > 0.4f) { ax = pad.rx; ay = pad.ry }
                     val a = pk.contains(KeyEvent.KEYCODE_BUTTON_A) || pk.contains(KeyEvent.KEYCODE_DPAD_CENTER)
                     val b = pk.contains(KeyEvent.KEYCODE_BUTTON_B) || pk.contains(KeyEvent.KEYCODE_BACK)
-                    fire = fire || a || pk.contains(KeyEvent.KEYCODE_BUTTON_R1) ||
-                            pk.contains(KeyEvent.KEYCODE_BUTTON_R2) || pk.contains(KeyEvent.KEYCODE_BUTTON_X) || pad.rt > 0.4f
-                    dash = dash || b || pk.contains(KeyEvent.KEYCODE_BUTTON_L1) ||
+                    jump = jump || a
+                    attack = attack || pk.contains(KeyEvent.KEYCODE_BUTTON_X) || pk.contains(KeyEvent.KEYCODE_BUTTON_R1) ||
+                            pk.contains(KeyEvent.KEYCODE_BUTTON_R2) || pad.rt > 0.4f
+                    block = block || b || pk.contains(KeyEvent.KEYCODE_BUTTON_L1) ||
                             pk.contains(KeyEvent.KEYCODE_BUTTON_L2) || pad.lt > 0.4f
+                    thr = thr || pk.contains(KeyEvent.KEYCODE_BUTTON_Y)
                     confirm = confirm || a
                     back = back || b
                     start = start || pk.contains(KeyEvent.KEYCODE_BUTTON_START)
-                    alt = alt || pk.contains(KeyEvent.KEYCODE_BUTTON_Y)
                 }
 
-                // touch
+                // touch (players 1 and 2 only)
                 for (t in touches.values) {
                     if (t.player != p) continue
                     when (t.role) {
@@ -311,20 +321,22 @@ class InputHub(context: Context) : InputManager.InputDeviceListener {
                             if (l > 1f) { dx /= l; dy /= l }
                             if (l > 0.15f) { mx += dx; my += dy }
                         }
-                        ROLE_FIRE -> fire = true
-                        ROLE_DASH -> dash = true
+                        ROLE_JUMP -> jump = true
+                        ROLE_HIT -> attack = true
+                        ROLE_BLOCK -> block = true
                     }
                 }
 
                 val ml = sqrt(mx * mx + my * my)
                 if (ml > 1f) { mx /= ml; my /= ml }
                 c.mx = mx; c.my = my; c.ax = ax; c.ay = ay
-                c.fire = fire; c.dash = dash
-                c.dashP = dash && !c.pDash; c.pDash = dash
+                c.jumpP = jump && !c.pJump; c.pJump = jump; c.jump = jump
+                c.attackP = attack && !c.pAttack; c.pAttack = attack; c.attack = attack
+                c.blockP = block && !c.pBlock; c.pBlock = block; c.block = block
+                c.throwP = thr && !c.pThrow; c.pThrow = thr
                 c.confirmP = confirm && !c.pConfirm; c.pConfirm = confirm
                 c.backP = back && !c.pBack; c.pBack = back
                 c.startP = start && !c.pStart; c.pStart = start
-                c.altP = alt && !c.pAlt; c.pAlt = alt
                 c.upP = nUp && !c.pUp; c.pUp = nUp
                 c.downP = nDown && !c.pDown; c.pDown = nDown
                 c.leftP = nLeft && !c.pLeft; c.pLeft = nLeft

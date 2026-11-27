@@ -10,7 +10,7 @@ import kotlin.random.Random
  * The streamer is an original made-up character. Text only, with a soft blip.
  */
 class Commentary(private val sfx: Sound) {
-    enum class Ev { WAVE, BOSS, WALL_LOW, DOWN, REVIVE, STREAK, CLEAR, GAME_OVER, ROUND, MATCH, SANTA, POWER, IDLE, VS_WALL_LOW, FIGHT }
+    enum class Ev { WAVE, BOSS, DOWN, STREAK, CLEAR, GAME_OVER, ROUND, MATCH, SANTA, POWER, IDLE, FIGHT, KO, BIG_HIT, PARRY, SPLAT }
 
     private class Msg(val user: String, val text: String, val color: Int) { var life = 9f }
 
@@ -30,7 +30,7 @@ class Commentary(private val sfx: Sound) {
     fun event(e: Ev, who: String = "", n: Int = 0, force: Boolean = false) {
         val pool = when (e) {
             Ev.WAVE -> if (n == 1) arrayOf(
-                "ok chat, chat, listen. we defend the wall. that's the whole praxis today.",
+                "ok chat, chat, listen. we hold this wall. that's the whole praxis today.",
                 "alright dude, we're live. the wall is the people's wall. protect it.",
                 "ok ok ok, here we go. I genuinely have a good feeling about this. famous last words."
             ) else arrayOf(
@@ -46,22 +46,11 @@ class Commentary(private val sfx: Sound) {
                 "bro that's the bourgeoisie. eat the... ok just shoot it, shoot it.",
                 "that's not a nug, that's a hedge fund with legs."
             )
-            Ev.WALL_LOW -> arrayOf(
-                "dude, the wall is NOT okay.",
-                "the wall is held together with vibes right now, chat.",
-                "somebody grab a brick, I'm literally begging.",
-                "this is crumbling infrastructure, dawg. typical."
-            )
             Ev.DOWN -> arrayOf(
                 "$who is DOWN, bro, go get them!",
                 "no no no no, $who what are you DOING?",
                 "$who just got absolutely cooked, chat.",
                 "dude $who is getting jumped, help them!"
-            )
-            Ev.REVIVE -> arrayOf(
-                "see? solidarity. that's what solidarity looks like, chat.",
-                "$who is back, LET'S GOOO.",
-                "nobody gets left behind. mutual aid, baby."
             )
             Ev.STREAK -> arrayOf(
                 "$who is COOKING right now, holy.",
@@ -101,15 +90,36 @@ class Commentary(private val sfx: Sound) {
                 "$who grabbed the good stuff. top shelf.",
                 "$who is juiced up. everybody run."
             )
-            Ev.VS_WALL_LOW -> arrayOf(
-                "$who's wall is crumbling, bro, this is a demolition.",
-                "chat, $who has like three bricks left.",
-                "the wall is cooked, $who. it's so over for you."
-            )
-            Ev.FIGHT -> arrayOf(
-                "ok chat, bud versus bud. pick a side. there's no neutral here.",
+            Ev.FIGHT -> if (who == "Classic") arrayOf(
+                "ok chat, nug versus nug. pick a side. there's no neutral here.",
                 "I'm staying neutral. I'm not staying neutral, I'm never neutral.",
                 "let's see who's the real top shelf, dude."
+            ) else arrayOf(
+                "ok, $who round. chat, this is gonna be chaos.",
+                "$who?? who designed this, dude. I love it.",
+                "$who. genuinely deranged rules. let's go."
+            )
+            Ev.KO -> arrayOf(
+                "OH. $who just got SENT, chat.",
+                "$who is gone. sent to the shadow realm.",
+                "bro $who got absolutely deleted.",
+                "rest in peace $who. it's so over for them.",
+                "$who got launched into the next tax bracket."
+            )
+            Ev.BIG_HIT -> arrayOf(
+                "DUDE. did you see $who fly?",
+                "$who just got yeeted across the whole wall.",
+                "that hit on $who was criminal. somebody call someone."
+            )
+            Ev.PARRY -> arrayOf(
+                "PARRY. $who with the parry, are you kidding me?",
+                "$who read that like a book, dude.",
+                "that's a $who parry. clip it. CLIP IT."
+            )
+            Ev.SPLAT -> arrayOf(
+                "$who just got pancaked into the wall.",
+                "oof. $who hit the wall like rent day.",
+                "$who became part of the wallpaper, chat."
             )
             Ev.IDLE -> arrayOf(
                 "chat's going crazy right now. relax chat, relax.",
@@ -136,9 +146,9 @@ class Commentary(private val sfx: Sound) {
     private fun queueChat(e: Ev) {
         burstPool = when (e) {
             Ev.BOSS -> BOSS_CHAT
-            Ev.WALL_LOW, Ev.VS_WALL_LOW -> WALL_CHAT
-            Ev.DOWN -> DOWN_CHAT
-            Ev.STREAK, Ev.ROUND, Ev.MATCH, Ev.CLEAR, Ev.REVIVE -> HYPE_CHAT
+            Ev.SPLAT -> WALL_CHAT
+            Ev.DOWN, Ev.KO -> DOWN_CHAT
+            Ev.STREAK, Ev.ROUND, Ev.MATCH, Ev.CLEAR, Ev.PARRY, Ev.BIG_HIT -> HYPE_CHAT
             Ev.GAME_OVER -> SAD_CHAT
             Ev.SANTA -> SANTA_CHAT
             else -> GENERIC
@@ -227,7 +237,7 @@ class Commentary(private val sfx: Sound) {
             "absolute cinema", "GG", "sheesh", "W W W", "WE'RE SO BACK", "goated")
         val SAD_CHAT = arrayOf("L", "gg go next", "it's so over", "wall diff", "rip wall", "o7", "unlucky", "run it back")
         val BOSS_CHAT = arrayOf("WHAT IS THAT", "nah", "big boy incoming", "so moldy", "RUN", "boss music", "landlord nug 💀", "tax the mega nug")
-        val WALL_CHAT = arrayOf("the wall 💀", "repair it!!", "wall diff", "it's crumbling", "brick check")
+        val WALL_CHAT = arrayOf("the wall 💀", "SPLAT", "wall diff", "pancaked", "ouch")
         val DOWN_CHAT = arrayOf("L", "skill issue", "get up!!", "revive them", "noooo", "unlucky")
         val SANTA_CHAT = arrayOf("SANTA??", "W santa", "ho ho ho", "santa carrying", "present!!", "merry christmas chat")
     }
