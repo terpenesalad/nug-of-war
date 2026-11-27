@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   shots:
     runs-on: ubuntu-latest
@@ -34,3 +37,12 @@ jobs:
         with:
           name: screenshots
           path: tools/preview/build/shots
+      - name: Publish screenshots to the "preview" release
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd tools/preview/build/shots || exit 0
+          zip -q ../shots.zip *.png
+          gh release view preview >/dev/null 2>&1 || gh release create preview --title "Preview screenshots" --notes "Auto-rendered screenshots (not an APK release)." --prerelease --latest=false
+          gh release upload preview ../shots.zip --clobber
