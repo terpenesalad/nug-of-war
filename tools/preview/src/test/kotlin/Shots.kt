@@ -119,5 +119,10 @@ class Shots {
         frames(1) { c, _ -> c[0].confirmP = true }
         frames(25) { c, _ -> c[0].mx = 1f; c[0].my = 0.6f }
         shot("09_editor.png")
+        frames(1) { c, _ -> c[0].backP = true }             // cancel the open corner
+        frames(45) { c, _ -> c[0].mx = -1f; c[0].my = -1f }
+        frames(1) { c, _ -> c[0].confirmP = true }          // pick up (if over a box)
+        frames(20) { c, _ -> c[0].mx = 0.6f; c[0].my = 0.5f; c[0].ax = 1f }
+        shot("09_editor_move.png")
     }
 }

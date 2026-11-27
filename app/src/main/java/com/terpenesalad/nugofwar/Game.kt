@@ -130,9 +130,17 @@ class Game(
     private val editRects = ArrayList<Plat>()
     private var curX = W / 2; private var curY = H / 2
     private var anchor: FloatArray? = null
-    private var grid = true
     private var clearHold = 0f
     private var lastRaw: FloatArray? = null
+    private val undoStack = ArrayList<List<Plat>>()
+    private var held = -1                 // controller: box being carried
+    private var heldOrig: Plat? = null
+    private var grabDX = 0f; private var grabDY = 0f
+    private var sel = -1                  // touch: selected box
+    private var touchMode = 0             // 0 none, 1 draw, 2 move, 3 resize, 4 button
+    private var touchOrig: Plat? = null
+    private var touchIdx = -1
+    private var editMsg = ""; private var editMsgT = 0f
 
     // commentary
     private val talk = Commentary(sfx)
@@ -315,6 +323,7 @@ class Game(
                 editSlot = i
                 editRects.clear(); editRects.addAll(loadWall(i))
                 anchor = null; curX = W / 2; curY = H / 2; clearHold = 0f; lastRaw = null
+                undoStack.clear(); held = -1; heldOrig = null; sel = -1; touchMode = 0
                 state = S_EDITOR
             }
             3 -> { go(S_TITLE); idx = 2 }
@@ -331,27 +340,84 @@ class Game(
         return -1
     }
 
+    private fun snapshot() {
+        undoStack.add(ArrayList(editRects))
+        if (undoStack.size > 60) undoStack.removeAt(0)
+    }
+
+    private fun undo() {
+        if (undoStack.isEmpty()) { editNote("Nothing to undo"); return }
+        editRects.clear(); editRects.addAll(undoStack.removeAt(undoStack.size - 1))
+        held = -1; heldOrig = null; sel = -1; anchor = null
+        sfx.play(Sound.SWISH, 0.6f); editNote("Undone")
+    }
+
+    private fun editNote(m: String) { editMsg = m; editMsgT = 1.6f }
+
+    /** Keeps a box on screen and at least a usable size, without changing its size when moved. */
+    private fun clampBox(l0: Float, t0: Float, r0: Float, b0: Float): Plat {
+        val w = (r0 - l0).coerceIn(30f, W); val h = (b0 - t0).coerceIn(16f, FLOOR)
+        val l = l0.coerceIn(0f, W - w); val t = t0.coerceIn(0f, FLOOR - h)
+        return Plat(l, t, l + w, t + h)
+    }
+
     private fun finishRect(x0: Float, y0: Float, x1: Float, y1: Float) {
         var l = min(x0, x1); var r = max(x0, x1); var t = min(y0, y1); var b = max(y0, y1)
         if (r - l < 30f) return
         if (b - t < 16f) b = t + 16f
         l = l.coerceIn(0f, W); r = r.coerceIn(0f, W); t = t.coerceIn(0f, FLOOR - 16f); b = b.coerceIn(t + 16f, FLOOR)
+        snapshot()
         editRects.add(Plat(l, t, r, b))
+        sel = editRects.size - 1
         sfx.play(Sound.PICKUP, 0.6f)
     }
 
+    private fun deleteBox(i: Int) {
+        if (i !in editRects.indices) return
+        snapshot(); editRects.removeAt(i)
+        held = -1; heldOrig = null; sel = -1
+        sfx.play(Sound.HIT); editNote("Deleted")
+    }
+
+    private fun copyBox(i: Int): Int {
+        if (i !in editRects.indices) return -1
+        val p = editRects[i]
+        snapshot()
+        editRects.add(clampBox(p.l + 30f, p.t + 30f, p.r + 30f, p.b + 30f))
+        sfx.play(Sound.PICKUP, 0.6f); editNote("Copied")
+        return editRects.size - 1
+    }
+
+    // editor touch buttons, right side of the top bar
+    private val btnSave = floatArrayOf(W - 250f, 16f, W - 20f, 86f)
+    private val btnUndo = floatArrayOf(W - 500f, 16f, W - 270f, 86f)
+    private val btnDel = floatArrayOf(W - 750f, 16f, W - 520f, 86f)
+    private val btnCopy = floatArrayOf(W - 1000f, 16f, W - 770f, 86f)
+    private fun onBtn(x: Float, y: Float, b: FloatArray) = x in b[0]..b[2] && y in b[1]..b[3]
+    private fun onAnyBtn(x: Float, y: Float) = onBtn(x, y, btnSave) || onBtn(x, y, btnUndo) ||
+        (sel >= 0 && (onBtn(x, y, btnDel) || onBtn(x, y, btnCopy)))
+
+    /** Resize handle: the bottom-right corner of a box (generous for fingers). */
+    private fun onHandle(i: Int, x: Float, y: Float): Boolean {
+        if (i !in editRects.indices) return false
+        val p = editRects[i]
+        return abs(x - p.r) < 50f && abs(y - p.b) < 50f
+    }
+
     private fun updateEditor(dt: Float, taps: List<FloatArray>) {
-        var mx = 0f; var my = 0f
-        var place = false; var del = false; var toggleGrid = false; var back = false; var holdDel = false
+        var mx = 0f; var my = 0f; var ax = 0f; var ay = 0f
+        var place = false; var del = false; var copy = false; var back = false; var holdDel = false; var undoP = false
         for (k in 0..3) {
             val c = c(k)
-            mx += c.mx; my += c.my
+            mx += c.mx; my += c.my; ax += c.ax; ay += c.ay
             if (c.confirmP) place = true
             if (c.attackP) del = true
             if (c.attack) holdDel = true
-            if (c.throwP) toggleGrid = true
+            if (c.throwP) copy = true
+            if (c.blockP && !c.backP) undoP = true   // L1 / LT (B also blocks, but B means save)
             if (c.backP || c.startP) back = true
         }
+        if (editMsgT > 0f) editMsgT -= dt
         val ml = sqrt(mx * mx + my * my).coerceAtMost(1f)
         if (ml > 0.05f) {
             val sp = 950f * ml * ml // a gentle push moves slowly for precise lining up
@@ -361,30 +427,96 @@ class Game(
         }
         curX = curX.coerceIn(0f, W); curY = curY.coerceIn(0f, FLOOR)
 
-        if (toggleGrid) grid = !grid
-        if (place) {
-            val a = anchor
-            if (a == null) { anchor = floatArrayOf(curX, curY); sfx.play(Sound.SELECT) }
-            else { finishRect(a[0], a[1], curX, curY); anchor = null }
+        // ---- controller: carrying a box
+        if (held in editRects.indices) {
+            val p = editRects[held]
+            var w = p.r - p.l; var h = p.b - p.t
+            if (abs(ax) > 0.2f || abs(ay) > 0.2f) {  // right stick stretches / squashes
+                w += ax * abs(ax) * 600f * dt
+                h -= ay * abs(ay) * 400f * dt
+            }
+            editRects[held] = clampBox(curX - grabDX, curY - grabDY, curX - grabDX + w, curY - grabDY + h)
+            when {
+                place -> { held = -1; heldOrig = null; sfx.play(Sound.THUD, 0.6f); editNote("Placed") }
+                del -> { val o = heldOrig; if (o != null) editRects[held] = o; if (undoStack.isNotEmpty()) undoStack.removeAt(undoStack.size - 1); deleteBox(held) }
+                copy -> { val n = copyBox(held); if (n >= 0) { held = n; heldOrig = editRects[n]; grabDX -= 30f; grabDY -= 30f } }
+                undoP || back -> {          // cancel the move, put it back where it was
+                    heldOrig?.let { editRects[held] = it }
+                    if (undoStack.isNotEmpty()) undoStack.removeAt(undoStack.size - 1)
+                    held = -1; heldOrig = null; sfx.play(Sound.SWISH, 0.6f); editNote("Move cancelled")
+                }
+            }
+            if (place || del || copy || undoP || back) { clearHold = 0f; lastRaw = input.rawTouch(); return }
+        } else {
+            held = -1
+            if (place) {
+                val a = anchor
+                val hv = hovered(curX, curY)
+                if (a == null && hv >= 0) {
+                    snapshot()
+                    held = hv; heldOrig = editRects[hv]
+                    grabDX = curX - editRects[hv].l; grabDY = curY - editRects[hv].t
+                    sfx.play(Sound.SELECT); editNote("Moving: stick to move, right stick to resize, A to drop")
+                } else if (a == null) { anchor = floatArrayOf(curX, curY); sfx.play(Sound.SELECT) }
+                else { finishRect(a[0], a[1], curX, curY); anchor = null; sel = -1 }
+            }
+            if (del) { val h = hovered(curX, curY); if (h >= 0) deleteBox(h) }
+            if (copy) {
+                val h = hovered(curX, curY)
+                if (h >= 0) {
+                    val n = copyBox(h)
+                    if (n >= 0) { held = n; heldOrig = editRects[n]; grabDX = curX - editRects[n].l; grabDY = curY - editRects[n].t }
+                }
+            }
+            if (undoP) undo()
         }
-        if (del) {
-            val h = hovered(curX, curY)
-            if (h >= 0) { editRects.removeAt(h); sfx.play(Sound.HIT) }
-        }
-        clearHold = if (holdDel) clearHold + dt else 0f
-        if (clearHold > 1.6f) { editRects.clear(); clearHold = 0f; sfx.play(Sound.BOOM, 0.5f) }
+        clearHold = if (holdDel && held < 0) clearHold + dt else 0f
+        if (clearHold > 1.6f) { snapshot(); editRects.clear(); clearHold = 0f; sel = -1; sfx.play(Sound.BOOM, 0.5f); editNote("Cleared (L1 to undo)") }
 
-        // touch: drag to draw, tap a platform to delete it
+        // ---- touch: drag empty space to draw, drag a box to move it,
+        //      drag its corner handle to resize, tap to select
         val raw = input.rawTouch()
-        if (raw != null) { curX = raw[2]; curY = raw[3] }
         val lr = lastRaw
-        if (raw == null && lr != null) {
+        if (raw != null) {
+            curX = raw[2]; curY = raw[3]
+            if (lr == null) {               // finger just went down
+                val x = raw[0]; val y = raw[1]
+                touchOrig = null; touchIdx = -1
+                touchMode = when {
+                    onAnyBtn(x, y) -> 4
+                    sel >= 0 && onHandle(sel, x, y) -> { touchIdx = sel; 3 }
+                    hovered(x, y) >= 0 -> { touchIdx = hovered(x, y); 2 }
+                    else -> 1
+                }
+                if (touchIdx >= 0) touchOrig = editRects[touchIdx]
+            }
+            val o = touchOrig
+            val moved = abs(raw[2] - raw[0]) + abs(raw[3] - raw[1])
+            if (o != null && touchIdx in editRects.indices && moved > 14f) {
+                if (lr != null && abs(lr[2] - lr[0]) + abs(lr[3] - lr[1]) <= 14f) snapshot()  // first real drag
+                val dx = raw[2] - raw[0]; val dy = raw[3] - raw[1]
+                editRects[touchIdx] = if (touchMode == 3) clampBox(o.l, o.t, o.r + dx, o.b + dy)
+                                      else clampBox(o.l + dx, o.t + dy, o.r + dx, o.b + dy)
+                sel = touchIdx
+            }
+        } else if (lr != null) {            // finger lifted
             val moved = abs(lr[2] - lr[0]) + abs(lr[3] - lr[1])
-            if (inRect(lr, W - 260f, 20f, W - 20f, 100f)) back = true
-            else if (moved < 20f) { val h = hovered(lr[0], lr[1]); if (h >= 0) { editRects.removeAt(h); sfx.play(Sound.HIT) } }
-            else finishRect(lr[0], lr[1], lr[2], lr[3])
+            val x = lr[0]; val y = lr[1]
+            when (touchMode) {
+                4 -> if (moved < 40f) when {
+                    onBtn(x, y, btnSave) -> back = true
+                    onBtn(x, y, btnUndo) -> undo()
+                    sel >= 0 && onBtn(x, y, btnDel) -> deleteBox(sel)
+                    sel >= 0 && onBtn(x, y, btnCopy) -> { sel = copyBox(sel) }
+                }
+                1 -> if (moved < 20f) sel = -1 else finishRect(lr[0], lr[1], lr[2], lr[3])
+                2, 3 -> if (moved <= 14f) { sel = if (sel == touchIdx) -1 else touchIdx; sfx.play(Sound.SELECT, 0.5f) }
+                         else sfx.play(Sound.THUD, 0.5f)
+            }
+            touchMode = 0; touchOrig = null; touchIdx = -1
         }
         lastRaw = raw
+        if (sel >= editRects.size) sel = -1
 
         if (back) {
             if (anchor != null) { anchor = null; return }
@@ -1689,17 +1821,28 @@ class Game(
     private fun drawEditor(c: Canvas) {
         c.drawColor(Color.BLACK)
         val s = Gfx.stroke; val f = Gfx.fill
-        if (grid) {
-            s.color = 0x30FFFFFF; s.strokeWidth = 1f
+        s.color = 0x30FFFFFF; s.strokeWidth = 1f
+        run {
             var x = 0f; while (x <= W) { c.drawLine(x, 0f, x, H, s); x += 60f }
             var y = 0f; while (y <= H) { c.drawLine(0f, y, W, y, s); y += 60f }
         }
-        val hv = hovered(curX, curY)
+        val hv = if (held >= 0 || anchor != null) -1 else hovered(curX, curY)
         for ((i, p) in editRects.withIndex()) {
-            val col = if (i == hv) 0xFFE08080.toInt() else Color.WHITE
+            val col = when {
+                i == held || (i == touchIdx && touchMode >= 2) -> ACCENT
+                i == sel -> 0xFF9FD0FF.toInt()
+                i == hv -> 0xFFE0C080.toInt()
+                else -> Color.WHITE
+            }
             f.color = Gfx.alpha(col, 0.18f); c.drawRect(p.l, p.t, p.r, p.b, f)
             s.color = col; s.strokeWidth = 5f
             if (p.solid) c.drawRect(p.l, p.t, p.r, p.b, s) else c.drawLine(p.l, p.t, p.r, p.t, s)
+            if (i == sel || i == held) {           // resize handle
+                f.color = col; c.drawCircle(p.r, p.b, 14f, f)
+                s.strokeWidth = 2f; s.color = Color.BLACK
+                c.drawLine(p.r - 6f, p.b - 6f, p.r + 6f, p.b + 6f, s)
+                Gfx.label(c, "${(p.r - p.l).toInt()} × ${(p.b - p.t).toInt()}", (p.l + p.r) / 2, p.t - 14f, 20f, col, shadow = false)
+            }
         }
         s.color = 0x80FFFFFF.toInt(); s.strokeWidth = 3f
         c.drawLine(0f, FLOOR, W, FLOOR, s)
@@ -1707,15 +1850,29 @@ class Game(
             s.color = ACCENT; s.strokeWidth = 4f
             c.drawRect(min(a[0], curX), min(a[1], curY), max(a[0], curX), max(a[1], curY), s)
         }
+        if (touchMode == 1) lastRaw?.let { r ->
+            s.color = ACCENT; s.strokeWidth = 4f
+            c.drawRect(min(r[0], r[2]), min(r[1], r[3]), max(r[0], r[2]), max(r[1], r[3]), s)
+        }
         s.color = Color.WHITE; s.strokeWidth = 3f
         c.drawLine(curX - 40f, curY, curX + 40f, curY, s); c.drawLine(curX, curY - 40f, curX, curY + 40f, s)
         c.drawCircle(curX, curY, 16f, s)
-        Gfx.label(c, "Tracing ${ARENA_NAMES[editSlot]}  ·  ${editRects.size} platforms", W / 2, 60f, 32f, Color.WHITE, shadow = false)
-        Gfx.label(c, "Stick: move cursor (push gently for precision)   A: corner   X: delete (hold X: clear all)   Y: grid   B / Start: save",
-            W / 2, 104f, 24f, MUTED, shadow = false)
-        Gfx.label(c, "Touch: drag to draw, tap to delete", W / 2, 138f, 22f, MUTED, shadow = false)
-        f.color = 0x30FFFFFF; c.drawRoundRect(W - 260f, 20f, W - 20f, 100f, 30f, 30f, f)
-        Gfx.label(c, "SAVE", W - 140f, 74f, 36f, Color.WHITE, shadow = false)
+
+        Gfx.label(c, "Tracing ${ARENA_NAMES[editSlot]}  ·  ${editRects.size} platforms", 40f, 62f, 32f, Color.WHITE, Paint.Align.LEFT, shadow = false)
+        val help = when {
+            held >= 0 -> "Moving   Stick: move   Right stick: resize   A: drop   Y: copy   X: delete   B / L1: cancel move"
+            anchor != null -> "Drawing   Stick: drag out the box   A: finish   B: cancel"
+            else -> "Stick: cursor (push gently for precision)   A: draw a box, or pick up a box to move it   Y: copy   X: delete   L1: undo   B / Start: save"
+        }
+        Gfx.label(c, help, W / 2, 128f, 24f, MUTED, shadow = false)
+        Gfx.label(c, "Touch: drag empty space to draw · drag a box to move it · tap a box, then drag its corner dot to resize", W / 2, 162f, 22f, MUTED, shadow = false)
+        fun button(b: FloatArray, t: String, on: Boolean = true) {
+            f.color = if (on) 0x30FFFFFF else 0x12FFFFFF; c.drawRoundRect(b[0], b[1], b[2], b[3], 26f, 26f, f)
+            Gfx.label(c, t, (b[0] + b[2]) / 2, b[3] - 22f, 32f, if (on) Color.WHITE else MUTED, shadow = false)
+        }
+        button(btnSave, "SAVE"); button(btnUndo, "UNDO", undoStack.isNotEmpty())
+        if (sel >= 0) { button(btnDel, "DELETE"); button(btnCopy, "COPY") }
+        if (editMsgT > 0f) Gfx.label(c, editMsg, W / 2, FLOOR - 40f, 30f, Gfx.alpha(Color.WHITE, editMsgT.coerceAtMost(1f)), shadow = false)
         Gfx.label(c, "floor", 40f, FLOOR - 10f, 22f, MUTED, Paint.Align.LEFT, shadow = false)
     }
 

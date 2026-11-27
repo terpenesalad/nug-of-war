@@ -70,9 +70,15 @@ USB controllers (with an OTG adapter) work too.
 | Aim guns | Right stick, or hold up/down | | |
 | Pause | Start | Esc | pause icon top right |
 
-**Wall Setup controls:** stick moves the cursor (push gently for fine control), A places a corner (press A at one
-corner and again at the opposite corner), X deletes the platform under the cursor (hold X to clear all),
-Y toggles the grid, B or Start saves. On touch: drag to draw, tap a platform to delete it.
+**Wall Setup controls (controller):**
+- Left stick moves the cursor. Push gently for fine control.
+- **A on empty space** draws a box: press A at one corner, then again at the opposite corner.
+- **A on an existing box** picks it up. Move it with the left stick, **stretch or squash it with the right stick**, then press A to drop it. B or L1 cancels the move and puts it back.
+- **Y** copies the box under the cursor (handy for matching shelves). **X** deletes it (hold X to clear everything).
+- **L1 / LT** undoes the last change, up to 60 steps.
+- **B or Start** saves.
+
+**Wall Setup on touch:** drag on empty space to draw a box. Drag a box to move it. Tap a box to select it, then drag the dot on its bottom-right corner to resize it, or use the DELETE and COPY buttons. UNDO and SAVE are at the top right.
 
 **Tips for tracing:** for a shelf, trace a thin line along its top edge. For a picture frame or a piece of furniture,
 trace the whole box so it becomes a solid block you can stand on and hide behind. Turn a lamp on so you can see your
