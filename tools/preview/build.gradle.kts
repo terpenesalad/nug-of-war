@@ -5,7 +5,7 @@ repositories { mavenCentral(); google() }
 dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("junit:junit:4.13.2")
-    testCompileOnly("org.robolectric:android-all:14-robolectric-10818077")
+    testImplementation("org.robolectric:android-all:14-robolectric-10818077")
 }
 kotlin { jvmToolchain(17) }
 val copyGame by tasks.registering(Copy::class) {
