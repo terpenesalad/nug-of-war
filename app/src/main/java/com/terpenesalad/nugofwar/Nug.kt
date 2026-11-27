@@ -30,9 +30,9 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
 
     companion object {
         const val REF = 90f
-        const val BW = 240
+        const val BW = 300
         const val BH = 290
-        const val OX = 120f
+        const val OX = 150f
         const val OY = 190f
         private val cache = LinkedHashMap<Long, Look>()
 
@@ -105,34 +105,34 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
                 val f = if (seg > 0f) (nextAt - acc) / seg else 0f
                 val x = p0[0] + (p1[0] - p0[0]) * f; val y = p0[1] + (p1[1] - p0[1]) * f
                 val small = if (y < yTop + 0.35f) 0.8f else 1f
-                val rr = rf(0.19f, 0.27f) * small
+                val rr = rf(0.25f, 0.34f) * small
                 val dx = -x; val dy = cyMid - y; val dl = max(0.001f, sqrt(dx * dx + dy * dy))
                 edge.add(Puff(x + dx / dl * rr * 0.55f, y + dy / dl * rr * 0.55f, rr))
-                nextAt += rr * 1.45f
+                nextAt += rr * 1.55f
             }
             acc += seg
         }
         // foxtails: little stacks of lumps climbing off the top
         if (shape == 3) {
-            for (sx in floatArrayOf(-0.36f, 0.06f, 0.4f)) {
+            for (sx in floatArrayOf(-0.3f, 0.02f, 0.32f)) {
                 var x = sx + rf(-0.05f, 0.05f); var y = yTop + 0.05f
-                val h = 3 + rnd.nextInt(3)
+                val h = 2 + rnd.nextInt(2)
                 for (k in 0 until h) {
-                    val rr = 0.17f - k * 0.018f
+                    val rr = 0.21f - k * 0.03f
                     edge.add(Puff(x, y, rr))
-                    y -= rr * 1.25f; x += rf(-0.06f, 0.06f) + sx * 0.08f
+                    y -= rr * 1.1f; x += rf(-0.05f, 0.05f) + sx * 0.12f
                 }
             }
         }
         val inner = ArrayList<Puff>()
         run {
-            var y = yTop + 0.32f
+            var y = yTop + 0.38f
             while (y < yBot - 0.15f) {
                 val t = (y - yTop) / (yBot - yTop)
-                val w = profile(t, peak, pow, maxW) * 0.62f
+                val w = profile(t, peak, pow, maxW) * 0.55f
                 var x = -w + rf(0f, 0.12f)
-                while (x <= w) { inner.add(Puff(x, y + rf(-0.04f, 0.04f), rf(0.17f, 0.24f))); x += rf(0.3f, 0.38f) }
-                y += rf(0.25f, 0.3f)
+                while (x <= w) { inner.add(Puff(x, y + rf(-0.05f, 0.05f), rf(0.24f, 0.31f))); x += rf(0.42f, 0.5f) }
+                y += rf(0.36f, 0.42f)
             }
         }
 
@@ -144,7 +144,7 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
         val ink = Gfx.mix(Gfx.shade(color, 0.34f), 0xFF0E1A0C.toInt(), if (brown) 0.15f else 0.35f)
         val dark = Gfx.shade(color, 0.72f)
         val leafCol = if (brown) Gfx.mix(Gfx.shade(color, 0.7f), 0xFF5A5A2E.toInt(), 0.35f)
-                      else Gfx.mix(Gfx.shade(color, 0.78f), 0xFF3F7A33.toInt(), 0.45f)
+                      else Gfx.mix(Gfx.shade(color, 0.7f), 0xFF2F6A2A.toInt(), 0.6f)
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
         val path = Path()
@@ -152,16 +152,16 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
         // ---- fan leaves and curly tendrils behind the bud
         val baseY = yBot - 0.05f
         val leafSpots = ArrayList<FloatArray>()  // x, y, size, angle, leaflets
-        val lw = right[(n * 0.8f).toInt()][0] * 0.7f
-        leafSpots.add(floatArrayOf(lw, baseY - rf(0.15f, 0.3f), rf(0.5f, 0.6f), rf(-10f, 25f), 7f))
-        leafSpots.add(floatArrayOf(-lw, baseY - rf(0.15f, 0.3f), rf(0.5f, 0.6f), 180f - rf(-10f, 25f), 7f))
+        val lw = right[(n * 0.75f).toInt()][0] * 0.78f
+        leafSpots.add(floatArrayOf(lw, baseY - rf(0.2f, 0.32f), rf(0.66f, 0.74f), rf(5f, 35f), 7f))
+        leafSpots.add(floatArrayOf(-lw, baseY - rf(0.2f, 0.32f), rf(0.66f, 0.74f), 180f - rf(5f, 35f), 7f))
         if (rnd.nextBoolean() || shape == 1) {
             val side = if (rnd.nextBoolean()) 1f else -1f
             val yy = yTop + (yBot - yTop) * rf(0.3f, 0.45f)
             val ww = profile((yy - yTop) / (yBot - yTop), peak, pow, maxW) * 0.7f
-            leafSpots.add(floatArrayOf(side * ww, yy, rf(0.38f, 0.46f), if (side > 0) rf(-40f, -15f) else 180f + rf(15f, 40f), 5f))
+            leafSpots.add(floatArrayOf(side * ww, yy, rf(0.5f, 0.58f), if (side > 0) rf(-40f, -15f) else 180f + rf(15f, 40f), 5f))
         }
-        if (rnd.nextFloat() < 0.5f) leafSpots.add(floatArrayOf(rf(-0.2f, 0.2f), baseY, rf(0.36f, 0.44f), rf(70f, 110f), 5f))
+        if (rnd.nextFloat() < 0.5f) leafSpots.add(floatArrayOf(rf(-0.1f, 0.1f), baseY, rf(0.4f, 0.46f), rf(80f, 100f), 5f))
         for (l in leafSpots) fanLeaf(c, p, path, l[0], l[1], l[2], l[3], l[4].toInt(), leafCol, ink)
 
         val curls = 2 + rnd.nextInt(3)
@@ -204,7 +204,7 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
         p.style = Paint.Style.STROKE; p.color = Gfx.alpha(ink, 0.9f)
         val oval = RectF()
         for (pf in all) {
-            if (rnd.nextFloat() < 0.35f) continue
+            if (rnd.nextFloat() < 0.5f) continue
             val inside = sqrt(pf.x * pf.x + (pf.y - cyMid) * (pf.y - cyMid))
             if (edge.contains(pf) && inside > maxW * 0.9f && rnd.nextFloat() < 0.6f) continue
             p.strokeWidth = rf(0.035f, 0.05f)
