@@ -323,10 +323,10 @@ class FlatArt(val color: Int, val shape: Int, val seed: Int) {
         // one leaf, behind, to one side; five plain leaflets
         val side = if (seed % 2 == 0) 1f else -1f
         val ly = b.yBot - 0.3f
-        c.save(); c.translate(side * b.widthAt(ly) * 0.7f, ly); c.rotate(if (side > 0) -25f else 205f)
+        c.save(); c.translate(side * b.widthAt(ly) * 0.92f, ly); c.rotate(if (side > 0) -30f else 210f)
         for (k in intArrayOf(-2, 2, -1, 1, 0)) {
             c.save(); c.rotate(k * 34f)
-            ArtKit.lance(path, 0.72f * (1f - 0.15f * abs(k)), 0.12f)
+            ArtKit.lance(path, 0.78f * (1f - 0.15f * abs(k)), 0.12f)
             p.style = Paint.Style.FILL; p.color = if (k > 0) leafShadow else leaf
             c.drawPath(path, p)
             c.restore()
@@ -399,8 +399,8 @@ class SketchArt(val color: Int, val shape: Int, val seed: Int) {
         val side = if (seed % 2 == 0) 1f else -1f
         for ((i, s) in floatArrayOf(side, -side).withIndex()) {
             val ly = b.yBot - (if (i == 0) 0.32f else 0.1f)
-            val size = if (i == 0) 0.7f else 0.45f
-            c.save(); c.translate(s * b.widthAt(ly) * 0.7f, ly); c.rotate(if (s > 0) -25f + i * 40f else 205f - i * 40f)
+            val size = if (i == 0) 0.76f else 0.5f
+            c.save(); c.translate(s * b.widthAt(ly) * 0.92f, ly); c.rotate(if (s > 0) -25f + i * 40f else 205f - i * 40f)
             for (k in intArrayOf(-2, 2, -1, 1, 0)) {
                 if (i == 1 && abs(k) == 2) continue
                 c.save(); c.rotate(k * 32f)
