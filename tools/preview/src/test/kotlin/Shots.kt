@@ -36,6 +36,16 @@ class Shots {
             Gfx.nug(c, 240f + k * 460f, 150f + shape * 255f, 82f, look, -0.4f, 0f, 0f, false, 0f, 1, 1f, hat = k == 3)
         }
         save(bmp, "02_nugs_bad.png")
+        c.drawColor(0xFF000000.toInt())
+        for (st in 0..3) {
+            Gfx.label(c, Look.STYLE_NAMES[st].uppercase(), 40f, 175f + st * 255f, 40f, 0xFFAAAAAA.toInt(), android.graphics.Paint.Align.LEFT, shadow = false)
+            for (k in 0..3) {
+                val col = if (k == 3) Game.BAD_COLORS[0] else Game.COLORS[k]
+                val look = Look.of(col, k, 11 + k, st)
+                Gfx.nug(c, 520f + k * 400f, 150f + st * 255f, 82f, look, 0.4f, 0.2f, 0f, false, 0f, if (k == 3) 1 else 0)
+            }
+        }
+        save(bmp, "00_styles.png")
     }
 
     private fun clear(c: Ctl) {

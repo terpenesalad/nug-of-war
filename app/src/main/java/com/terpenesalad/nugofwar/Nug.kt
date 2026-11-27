@@ -20,7 +20,7 @@ import kotlin.random.Random
  * How a nug looks. The bud body (layered calyxes with darker shading flicks, sugar leaves,
  * pistils and frost) is painted once into a bitmap, then drawn each frame with legs and eyes on top.
  */
-class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
+class Look private constructor(val color: Int, val shape: Int, val seed: Int, val style: Int) {
     val outline = Gfx.shade(color, 0.42f)
     val light = Gfx.mix(color, Color.WHITE, 0.35f)
     /** Top of the bud in units of body radius (negative = above centre). Used to place hats. */
@@ -36,11 +36,15 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
         const val OY = 190f
         private val cache = LinkedHashMap<Long, Look>()
 
-        fun of(color: Int, shape: Int, seed: Int): Look {
-            val key = (color.toLong() shl 24) xor (shape.toLong() shl 16) xor seed.toLong()
+        /** Art style for all nugs: 0 puffy, 1 flat, 2 sketch, 3 faceted. */
+        @Volatile var style = 0
+        val STYLE_NAMES = arrayOf("Puffy", "Flat", "Sketch", "Faceted")
+
+        fun of(color: Int, shape: Int, seed: Int, st: Int = style): Look {
+            val key = (color.toLong() shl 24) xor (shape.toLong() shl 16) xor seed.toLong() xor (st.toLong() shl 40)
             cache[key]?.let { return it }
-            if (cache.size > 48) cache.remove(cache.keys.first())
-            return Look(color, shape, seed).also { cache[key] = it }
+            if (cache.size > 64) cache.remove(cache.keys.first())
+            return Look(color, shape, seed, st).also { cache[key] = it }
         }
     }
 
@@ -52,7 +56,13 @@ class Look private constructor(val color: Int, val shape: Int, val seed: Int) {
     fun bitmap(): Bitmap {
         bmp?.let { return it }
         val b = Bitmap.createBitmap(BW, BH, Bitmap.Config.ARGB_8888)
-        paint(Canvas(b))
+        val cv = Canvas(b)
+        when (style) {
+            0 -> PuffyArt(color, shape, seed).paint(cv)
+            1 -> FlatArt(color, shape, seed).paint(cv)
+            2 -> SketchArt(color, shape, seed).paint(cv)
+            else -> paint(cv)
+        }
         bmp = b
         return b
     }

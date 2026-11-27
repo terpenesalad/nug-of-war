@@ -88,6 +88,7 @@ class Game(
     init {
         sfx.uiEnabled = prefs.getBoolean("uiSounds", true)
         sfx.gameEnabled = prefs.getBoolean("gameSounds", true)
+        Look.style = prefs.getInt("nugStyle", 0).coerceIn(0, Look.STYLE_NAMES.size - 1)
     }
 
     // lobby
@@ -305,20 +306,22 @@ class Game(
         "Projector Mode: " + if (projector) "ON" else "OFF",
         "Christmas Mode: " + if (xmas) "ON" else "OFF",
         "Streamer Commentary: " + if (commentary) "ON" else "OFF",
+        "Nug style: " + Look.STYLE_NAMES[Look.style],
         "Menu sounds: " + if (sfx.uiEnabled) "ON" else "OFF",
         "Game sounds: " + if (sfx.gameEnabled) "ON" else "OFF",
         "Reset Controllers", "Back")
 
     private fun updateSettings(taps: List<FloatArray>) {
         if (anyBack()) { go(S_TITLE); idx = 3; return }
-        when (listMenu(7, 380f, 86f, 820f, taps)) {
+        when (listMenu(8, 350f, 80f, 820f, taps)) {
             0 -> { projector = !projector; prefs.edit().putBoolean("projector", projector).apply() }
             1 -> { xmas = !xmas; prefs.edit().putBoolean("xmas", xmas).apply(); if (xmas) sfx.play(Sound.JINGLE) }
             2 -> { commentary = !commentary; prefs.edit().putBoolean("commentary", commentary).apply() }
-            3 -> { sfx.uiEnabled = !sfx.uiEnabled; prefs.edit().putBoolean("uiSounds", sfx.uiEnabled).apply() }
-            4 -> { sfx.gameEnabled = !sfx.gameEnabled; prefs.edit().putBoolean("gameSounds", sfx.gameEnabled).apply() }
-            5 -> { input.resetSlots(); floaters.add(Floater("Controllers reset: press A on each one in order", W / 2, 990f, Color.WHITE)) }
-            6 -> { go(S_TITLE); idx = 3 }
+            3 -> { Look.style = (Look.style + 1) % Look.STYLE_NAMES.size; prefs.edit().putInt("nugStyle", Look.style).apply() }
+            4 -> { sfx.uiEnabled = !sfx.uiEnabled; prefs.edit().putBoolean("uiSounds", sfx.uiEnabled).apply() }
+            5 -> { sfx.gameEnabled = !sfx.gameEnabled; prefs.edit().putBoolean("gameSounds", sfx.gameEnabled).apply() }
+            6 -> { input.resetSlots(); floaters.add(Floater("Controllers reset: press A on each one in order", W / 2, 990f, Color.WHITE)) }
+            7 -> { go(S_TITLE); idx = 3 }
         }
     }
 
@@ -1805,7 +1808,7 @@ class Game(
         Gfx.label(c, "SETTINGS", W / 2, 200f, 90f, Color.WHITE, shadow = false)
         Gfx.label(c, "Projector Mode: pure black background so only the game lights up your wall", W / 2, 270f, 28f, MUTED, shadow = false)
         val items = settingsItems()
-        for (i in items.indices) menuItem(c, items[i], 380f + i * 86f, i == idx, 820f)
+        for (i in items.indices) menuItem(c, items[i], 350f + i * 80f, i == idx, 820f)
         Gfx.label(c, controllerStatus(), W / 2, 1000f, 26f, 0xFFAAAAAA.toInt(), shadow = false)
         drawSnowAndSanta(c)
     }
