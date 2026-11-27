@@ -17,6 +17,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.14.3"
+      - name: Fetch androidx.test classes
+        working-directory: tools/preview
+        run: |
+          mkdir -p libs
+          for a in test/monitor/1.7.2/monitor-1.7.2 test/core/1.6.1/core-1.6.1 tracing/tracing/1.1.0/tracing-1.1.0 test/services/storage/1.5.0/storage-1.5.0; do
+            curl -sSfL -o x.aar "https://dl.google.com/android/maven2/androidx/$a.aar"
+            unzip -p x.aar classes.jar > "libs/$(basename $a).jar"
+          done
+          ls -la libs
       - name: Render screenshots
         working-directory: tools/preview
         run: gradle test --no-daemon
