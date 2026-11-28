@@ -27,6 +27,7 @@ import kotlin.system.exitProcess
 fun main(args: Array<String>) {
     when (args.firstOrNull()) {
         "--shots" -> { Headless.shots(File(args.getOrElse(1) { "shots" })); return }
+        "--ui" -> { Headless.ui(File(args.getOrElse(1) { "ui" })); return }
         "--icons" -> { Headless.icons(File(args.getOrElse(1) { "icons" })); return }
     }
     SwingUtilities.invokeLater { DesktopApp().start() }
@@ -226,5 +227,48 @@ object Headless {
         val ms = (System.nanoTime() - t0) / 1e6 / 120
         File(dir, "desktop_timing.txt").writeText("avg frame (update + software draw): %.2f ms\n".format(ms))
         println("avg frame %.2f ms".format(ms))
+    }
+
+    /** A tour of every menu screen, for checking the UI. */
+    fun ui(dir: File) {
+        dir.mkdirs()
+        val surf = Surface.makeRasterN32Premul(1920, 1080)
+        val canvas = android.graphics.Canvas(surf.canvas)
+        val input = InputHub(useControllers = false)
+        val prefsFile = File(dir, "prefs.properties"); prefsFile.delete()
+        val prefs = FilePrefs(prefsFile)
+        prefs.edit().putBoolean("projector", false).putString("wall0", "300,400,700,416;1100,300,1400,520;200,700,900,716").commit()
+        val game = Game(input, Sound(enabledOutput = false), prefs) {}
+        fun clear(c: Ctl) {
+            c.jumpP = false; c.attackP = false; c.blockP = false; c.throwP = false; c.confirmP = false
+            c.backP = false; c.startP = false; c.upP = false; c.downP = false; c.leftP = false; c.rightP = false
+            c.mx = 0f; c.my = 0f; c.ax = 0f; c.ay = 0f; c.jump = false; c.attack = false; c.block = false
+        }
+        fun frames(n: Int, setup: (Array<Ctl>) -> Unit = { }) {
+            repeat(n) { input.ctl.forEach { clear(it) }; setup(input.ctl); game.update(1f / 60f) }
+        }
+        fun press(f: (Ctl) -> Unit) { frames(1) { f(it[0]) }; frames(2) }
+        fun down(n: Int) = repeat(n) { press { it.downP = true } }
+        fun shot(name: String) { canvas.drawColor(0xFF000000.toInt()); game.draw(canvas); save(surf, File(dir, name)) }
+
+        frames(40); shot("ui_01_title.png")
+        down(3); press { it.confirmP = true }; frames(10); shot("ui_02_settings.png")
+        press { it.backP = true }; frames(5)
+        down(1); press { it.confirmP = true }; frames(10); shot("ui_03_help.png")
+        press { it.backP = true }; frames(5)
+        down(2); press { it.confirmP = true }; frames(10); shot("ui_04_wallmenu.png")
+        press { it.confirmP = true }; frames(10); shot("ui_05_editor.png")
+        // move the cursor onto the first box and pick it up
+        frames(30) { it[0].mx = -0.8f; it[0].my = -0.2f }
+        press { it.confirmP = true }; frames(20) { it[0].mx = 0.5f }; shot("ui_06_editor_move.png")
+        press { it.confirmP = true }
+        frames(25) { it[0].mx = 1f; it[0].my = 0.4f }; press { it.confirmP = true }; frames(20) { it[0].mx = 0.6f; it[0].my = 0.3f }
+        shot("ui_07_editor_draw.png")
+        press { it.backP = true }; press { it.backP = true }; frames(5)
+        press { it.backP = true }; frames(5)
+        repeat(2) { press { it.upP = true } }; press { it.confirmP = true }; frames(10); shot("ui_08_arena.png")
+        press { it.confirmP = true }; frames(2) { it[1].confirmP = true }; frames(10); shot("ui_09_lobby.png")
+        frames(1) { it[0].confirmP = true; it[1].confirmP = true }; frames(240); shot("ui_10_play.png")
+        press { it.startP = true }; frames(10); shot("ui_11_pause.png")
     }
 }

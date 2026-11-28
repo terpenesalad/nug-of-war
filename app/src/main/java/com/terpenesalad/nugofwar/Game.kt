@@ -292,7 +292,7 @@ class Game(
             if (e.x < -80) e.x = W + 80f
         }
         if (anyBack()) { quit(); return }
-        when (listMenu(titleItems.size, 470f, 84f, 760f, taps)) {
+        when (listMenu(titleItems.size, 480f, 82f, 560f, taps)) {
             0 -> { mode = BRAWL; go(S_ARENA); idx = arena }
             1 -> { mode = SURVIVAL; go(S_ARENA); idx = arena }
             2 -> go(S_WALLMENU)
@@ -302,41 +302,65 @@ class Game(
         }
     }
 
-    private fun settingsItems() = arrayOf(
-        "Projector Mode: " + if (projector) "ON" else "OFF",
-        "Christmas Mode: " + if (xmas) "ON" else "OFF",
-        "Streamer Commentary: " + if (commentary) "ON" else "OFF",
-        "Nug style: " + Look.STYLE_NAMES[Look.style],
-        "Menu sounds: " + if (sfx.uiEnabled) "ON" else "OFF",
-        "Game sounds: " + if (sfx.gameEnabled) "ON" else "OFF",
-        "Reset Controllers", "Back")
+    private val settingsDesc = arrayOf(
+        "Pure black background, so only the game lights up your wall. Turn it off for a TV or monitor.",
+        "Snow, Santa flying over, Santa hats, presents and fairy lights along your shelves.",
+        "A laid-back made-up streamer and a quiet live chat react to the action.",
+        "How the nugs are drawn. Use left and right to flip through the styles.",
+        "Soft chimes when you move around the menus.",
+        "Hits, jumps, explosions and everything else in a fight.",
+        "Forget which controller is which. Then press A on each controller in player order.",
+        "")
+
+    /** Label, value text and switch state (-1 = not a switch) for each settings row. */
+    private fun settingsRows(): List<Triple<String, String, Int>> = listOf(
+        Triple("Projector Mode", "", if (projector) 1 else 0),
+        Triple("Christmas", "", if (xmas) 1 else 0),
+        Triple("Streamer Commentary", "", if (commentary) 1 else 0),
+        Triple("Nug Style", Look.STYLE_NAMES[Look.style], -1),
+        Triple("Menu Sounds", "", if (sfx.uiEnabled) 1 else 0),
+        Triple("Game Sounds", "", if (sfx.gameEnabled) 1 else 0),
+        Triple("Reset Controllers", "", -1),
+        Triple("Back", "", -1))
+
+    private fun cycleStyle(d: Int) {
+        Look.style = (Look.style + d + Look.STYLE_NAMES.size) % Look.STYLE_NAMES.size
+        prefs.edit().putInt("nugStyle", Look.style).apply()
+        sfx.play(Sound.SELECT)
+    }
 
     private fun updateSettings(taps: List<FloatArray>) {
         if (anyBack()) { go(S_TITLE); idx = 3; return }
-        when (listMenu(8, 350f, 80f, 820f, taps)) {
+        if (idx == 3 && input.ctl.any { it.leftP }) cycleStyle(-1)
+        if (idx == 3 && input.ctl.any { it.rightP }) cycleStyle(1)
+        when (listMenu(8, 360f, 80f, 760f, taps, 520f)) {
             0 -> { projector = !projector; prefs.edit().putBoolean("projector", projector).apply() }
             1 -> { xmas = !xmas; prefs.edit().putBoolean("xmas", xmas).apply(); if (xmas) sfx.play(Sound.JINGLE) }
             2 -> { commentary = !commentary; prefs.edit().putBoolean("commentary", commentary).apply() }
-            3 -> { Look.style = (Look.style + 1) % Look.STYLE_NAMES.size; prefs.edit().putInt("nugStyle", Look.style).apply() }
+            3 -> cycleStyle(1)
             4 -> { sfx.uiEnabled = !sfx.uiEnabled; prefs.edit().putBoolean("uiSounds", sfx.uiEnabled).apply() }
             5 -> { sfx.gameEnabled = !sfx.gameEnabled; prefs.edit().putBoolean("gameSounds", sfx.gameEnabled).apply() }
-            6 -> { input.resetSlots(); floaters.add(Floater("Controllers reset: press A on each one in order", W / 2, 990f, Color.WHITE)) }
+            6 -> { input.resetSlots(); floaters.add(Floater("Controllers reset. Press A on each one in order.", 1390f, 900f, Color.WHITE)) }
             7 -> { go(S_TITLE); idx = 3 }
         }
     }
 
+    private fun wallCardL(i: Int) = 170f + i * 540f
+
     private fun updateWallMenu(taps: List<FloatArray>) {
         if (anyBack()) { go(S_TITLE); idx = 2; return }
-        when (val i = listMenu(4, 520f, 90f, 760f, taps)) {
-            0, 1, 2 -> {
-                editSlot = i
-                editRects.clear(); editRects.addAll(loadWall(i))
-                anchor = null; curX = W / 2; curY = H / 2; clearHold = 0f; lastRaw = null
-                undoStack.clear(); held = -1; heldOrig = null; sel = -1; touchMode = 0
-                state = S_EDITOR
-            }
-            3 -> { go(S_TITLE); idx = 2 }
-        }
+        idx = idx.coerceIn(0, 2)
+        if (input.ctl.any { it.leftP || it.upP }) { idx = (idx + 2) % 3; sfx.play(Sound.SELECT) }
+        if (input.ctl.any { it.rightP || it.downP }) { idx = (idx + 1) % 3; sfx.play(Sound.SELECT) }
+        var pick = if (anyConfirm() || anyStart()) idx else -1
+        for (t in taps) for (i in 0..2) if (inRect(t, wallCardL(i), 320f, wallCardL(i) + 500f, 790f)) { idx = i; pick = i }
+        if (pick < 0) return
+        sfx.play(Sound.UI_OK)
+        editSlot = pick
+        editRects.clear(); editRects.addAll(loadWall(pick))
+        anchor = null; curX = W / 2; curY = H / 2; clearHold = 0f; lastRaw = null
+        undoStack.clear(); held = -1; heldOrig = null; sel = -1; touchMode = 0
+        state = S_EDITOR
     }
 
     // ----------------------------------------------------------------- wall editor
@@ -413,7 +437,46 @@ class Game(
         return abs(x - p.r) < 50f && abs(y - p.b) < 50f
     }
 
+    // ---- snapping: box edges line up with other boxes' edges (and the screen edges / floor)
+    private val guidesX = ArrayList<Float>()
+    private val guidesY = ArrayList<Float>()
+    private val SNAP = 12f
+
+    private fun snapX(x: Float, skip: Int): Float {
+        var best = x; var bd = SNAP
+        fun tryX(v: Float) { val d = abs(v - x); if (d < bd) { bd = d; best = v } }
+        tryX(0f); tryX(W)
+        for ((i, p) in editRects.withIndex()) if (i != skip) { tryX(p.l); tryX(p.r) }
+        if (best != x) guidesX.add(best)
+        return best
+    }
+
+    private fun snapY(y: Float, skip: Int): Float {
+        var best = y; var bd = SNAP
+        fun tryY(v: Float) { val d = abs(v - y); if (d < bd) { bd = d; best = v } }
+        tryY(FLOOR)
+        for ((i, p) in editRects.withIndex()) if (i != skip) { tryY(p.t); tryY(p.b) }
+        if (best != y) guidesY.add(best)
+        return best
+    }
+
+    /** Moves a box so its nearest edges line up with other boxes, keeping its size. */
+    private fun snapMove(p: Plat, skip: Int): Plat {
+        val gx = guidesX.size; val gy = guidesY.size
+        val dl = snapX(p.l, skip) - p.l; val dr = snapX(p.r, skip) - p.r
+        val dx = if (dl != 0f && (dr == 0f || abs(dl) <= abs(dr))) dl else dr
+        val dt = snapY(p.t, skip) - p.t; val db = snapY(p.b, skip) - p.b
+        val dy = if (dt != 0f && (db == 0f || abs(dt) <= abs(db))) dt else db
+        // keep only the guides that were actually used
+        while (guidesX.size > gx) guidesX.removeAt(guidesX.size - 1)
+        while (guidesY.size > gy) guidesY.removeAt(guidesY.size - 1)
+        if (dx != 0f) guidesX.add(if (dx == dl) p.l + dx else p.r + dx)
+        if (dy != 0f) guidesY.add(if (dy == dt) p.t + dy else p.b + dy)
+        return clampBox(p.l + dx, p.t + dy, p.r + dx, p.b + dy)
+    }
+
     private fun updateEditor(dt: Float, taps: List<FloatArray>) {
+        guidesX.clear(); guidesY.clear()
         var mx = 0f; var my = 0f; var ax = 0f; var ay = 0f
         var place = false; var del = false; var copy = false; var back = false; var holdDel = false; var undoP = false
         for (k in 0..3) {
@@ -444,7 +507,8 @@ class Game(
                 w += ax * abs(ax) * 600f * dt
                 h -= ay * abs(ay) * 400f * dt
             }
-            editRects[held] = clampBox(curX - grabDX, curY - grabDY, curX - grabDX + w, curY - grabDY + h)
+            val moved = clampBox(curX - grabDX, curY - grabDY, curX - grabDX + w, curY - grabDY + h)
+            editRects[held] = if (abs(ax) > 0.2f || abs(ay) > 0.2f) moved else snapMove(moved, held)
             when {
                 place -> { held = -1; heldOrig = null; sfx.play(Sound.THUD, 0.6f); editNote("Placed") }
                 del -> { val o = heldOrig; if (o != null) editRects[held] = o; if (undoStack.isNotEmpty()) undoStack.removeAt(undoStack.size - 1); deleteBox(held) }
@@ -465,9 +529,9 @@ class Game(
                     snapshot()
                     held = hv; heldOrig = editRects[hv]
                     grabDX = curX - editRects[hv].l; grabDY = curY - editRects[hv].t
-                    sfx.play(Sound.SELECT); editNote("Moving: stick to move, right stick to resize, A to drop")
-                } else if (a == null) { anchor = floatArrayOf(curX, curY); sfx.play(Sound.SELECT) }
-                else { finishRect(a[0], a[1], curX, curY); anchor = null; sel = -1 }
+                    sfx.play(Sound.SELECT); editNote("Picked up")
+                } else if (a == null) { anchor = floatArrayOf(snapX(curX, -1), snapY(curY, -1)); sfx.play(Sound.SELECT) }
+                else { finishRect(a[0], a[1], snapX(curX, -1), snapY(curY, -1)); anchor = null; sel = -1 }
             }
             if (del) { val h = hovered(curX, curY); if (h >= 0) deleteBox(h) }
             if (copy) {
@@ -504,8 +568,8 @@ class Game(
             if (o != null && touchIdx in editRects.indices && moved > 14f) {
                 if (lr != null && abs(lr[2] - lr[0]) + abs(lr[3] - lr[1]) <= 14f) snapshot()  // first real drag
                 val dx = raw[2] - raw[0]; val dy = raw[3] - raw[1]
-                editRects[touchIdx] = if (touchMode == 3) clampBox(o.l, o.t, o.r + dx, o.b + dy)
-                                      else clampBox(o.l + dx, o.t + dy, o.r + dx, o.b + dy)
+                editRects[touchIdx] = if (touchMode == 3) clampBox(o.l, o.t, snapX(o.r + dx, touchIdx), snapY(o.b + dy, touchIdx))
+                                      else snapMove(clampBox(o.l + dx, o.t + dy, o.r + dx, o.b + dy), touchIdx)
                 sel = touchIdx
             }
         } else if (lr != null) {            // finger lifted
@@ -518,7 +582,7 @@ class Game(
                     sel >= 0 && onBtn(x, y, btnDel) -> deleteBox(sel)
                     sel >= 0 && onBtn(x, y, btnCopy) -> { sel = copyBox(sel) }
                 }
-                1 -> if (moved < 20f) sel = -1 else finishRect(lr[0], lr[1], lr[2], lr[3])
+                1 -> if (moved < 20f) sel = -1 else finishRect(snapX(lr[0], -1), snapY(lr[1], -1), snapX(lr[2], -1), snapY(lr[3], -1))
                 2, 3 -> if (moved <= 14f) { sel = if (sel == touchIdx) -1 else touchIdx; sfx.play(Sound.SELECT, 0.5f) }
                          else sfx.play(Sound.THUD, 0.5f)
             }
@@ -540,7 +604,7 @@ class Game(
 
     private fun updateArenaSelect(taps: List<FloatArray>) {
         if (anyBack()) { go(S_TITLE); idx = mode; return }
-        val pick = listMenu(ARENA_NAMES.size, 290f, 92f, 620f, taps, W / 2 - 420f)
+        val pick = listMenu(ARENA_NAMES.size, 360f, 82f, 640f, taps, 460f)
         if (pick >= 0) {
             arena = pick
             prefs.edit().putInt("arena", arena).apply()
@@ -588,7 +652,7 @@ class Game(
         for (t in taps) {
             for (p in 0..3) {
                 val l = panelL(p)
-                if (!inRect(t, l, 190f, l + 420f, 850f)) continue
+                if (!inRect(t, l, 250f, l + 420f, 860f)) continue
                 if (!joined[p]) { joined[p] = true; sfx.play(Sound.SELECT); continue }
                 if (t[1] < 620f) colorIdx[p] = (colorIdx[p] + 1) % COLORS.size
                 else shapeIdx[p] = (shapeIdx[p] + 1) % SHAPE_NAMES.size
@@ -1740,52 +1804,6 @@ class Game(
 
     private fun dim(c: Canvas, a: Int = 170) { Gfx.fill.color = Color.argb(a, 0, 0, 0); c.drawRect(0f, 0f, W, H, Gfx.fill) }
 
-    private fun menuItem(c: Canvas, text: String, y: Float, selected: Boolean, width: Float = 800f, cx: Float = W / 2) {
-        if (selected) {
-            Gfx.fill.color = SEL
-            c.drawRoundRect(cx - width / 2, y - 56, cx + width / 2, y + 22, 40f, 40f, Gfx.fill)
-            Gfx.stroke.color = 0x66FFFFFF; Gfx.stroke.strokeWidth = 2f
-            c.drawRoundRect(cx - width / 2, y - 56, cx + width / 2, y + 22, 40f, 40f, Gfx.stroke)
-        }
-        Gfx.label(c, text, cx, y, 44f, if (selected) Color.WHITE else 0xFF6F7471.toInt(), shadow = false)
-    }
-
-    private fun drawPause(c: Canvas) {
-        dim(c)
-        Gfx.label(c, "PAUSED", W / 2, 380f, 110f, Color.WHITE)
-        if (pauseMsg.isNotEmpty()) Gfx.label(c, pauseMsg, W / 2, 440f, 34f, LOWCOL)
-        for (i in pauseItems.indices) menuItem(c, pauseItems[i], 520f + i * 100f, i == idx, 600f)
-        Gfx.label(c, controllerStatus(), W / 2, 1000f, 26f, 0xFFAAAAAA.toInt())
-    }
-
-    private fun drawOver(c: Canvas) {
-        dim(c, 170)
-        if (mode == SURVIVAL) {
-            Gfx.label(c, "THE BAD NUGS TOOK THE WALL", W / 2, 280f, 90f, LOWCOL)
-            Gfx.label(c, "You survived until wave $wave", W / 2, 370f, 52f, Color.WHITE)
-            Gfx.label(c, "Best ever: wave $bestWave", W / 2, 440f, 38f, SOFT)
-            val act = players.filter { it.active }
-            var x = W / 2 - (act.size - 1) * 200f
-            for (p in act) {
-                Gfx.nug(c, x, 600f, 70f, p.look, 0f, 0.3f, p.phase, true, 0f, 0, 1f, xmas)
-                Gfx.label(c, "P${p.idx + 1}: ${p.kills} knocked off", x, 780f, 34f, p.look.light)
-                x += 400f
-            }
-        } else {
-            val w = players[matchWinner.coerceAtLeast(0)]
-            Gfx.label(c, "${nameOf(w.idx).uppercase()} WINS!", W / 2, 280f, 110f, w.look.light)
-            Gfx.label(c, players.filter { it.active }.joinToString("    ") { "P${it.idx + 1}: ${score[it.idx]}★ ${it.kos} KOs" }, W / 2, 370f, 38f, Color.WHITE)
-            val hop = abs(sin(time * 6f)) * 40f
-            Gfx.nug(c, W / 2, 610f - hop, 110f, w.look, 0f, 0.2f, w.phase, true, 0f, 0, 1f, xmas)
-        }
-        for (i in 0..1) {
-            val cx = if (i == 0) W / 2 - 280 else W / 2 + 280
-            Gfx.fill.color = if (idx == i) 0x40FFFFFF else 0x18FFFFFF
-            c.drawRoundRect(cx - 240, 860f, cx + 240, 980f, 50f, 50f, Gfx.fill)
-            Gfx.label(c, if (i == 0) "Play Again" else "Main Menu", cx, 938f, 46f, Color.WHITE, shadow = false)
-        }
-    }
-
     private fun controllerStatus(): String {
         val parts = ArrayList<String>()
         for (i in 0..3) {
@@ -1795,113 +1813,330 @@ class Game(
         return if (parts.isEmpty()) "No controller yet: press A on a controller (first one = Player 1)" else parts.joinToString("     ")
     }
 
+    // ================================================================= UI kit
+
+    private val BG = 0xFF0B0D0C.toInt()
+    private val CARD = 0xFF131615.toInt()
+    private val LINE = 0x1AFFFFFF
+    private val TEXT = 0xFFEDEFED.toInt()
+    private val DIMC = 0xFF5F6460.toInt()
+
+    private fun screen(c: Canvas) = c.drawColor(if (projector) Color.BLACK else BG)
+
+    /** Page header, top left: small eyebrow, big title, optional subtitle, hairline. */
+    private fun header(c: Canvas, eyebrow: String, title: String, sub: String = "", line: Boolean = true) {
+        Gfx.label(c, eyebrow.uppercase(), 140f, 116f, 22f, ACCENT, Paint.Align.LEFT, shadow = false)
+        Gfx.label(c, title, 136f, 190f, 66f, TEXT, Paint.Align.LEFT, shadow = false)
+        if (sub.isNotEmpty()) Gfx.label(c, sub, 140f, 238f, 27f, MUTED, Paint.Align.LEFT, shadow = false, bold = false)
+        if (line) { Gfx.fill.color = LINE; c.drawRect(140f, 272f, W - 140f, 274f, Gfx.fill) }
+    }
+
+    /** Bottom bar: who's connected on the left, button hints on the right. */
+    private fun footer(c: Canvas, hints: List<Pair<String, String>>, y: Float = 1022f) {
+        Gfx.fill.color = LINE; c.drawRect(140f, y - 46f, W - 140f, y - 44f, Gfx.fill)
+        playerDots(c, 140f, y)
+        Gfx.hints(c, hints, W - 140f - Gfx.hintsWidth(hints), y)
+    }
+
+    /** Which controller is which player: a dot and a name each. */
+    private fun playerDots(c: Canvas, x0: Float, y: Float) {
+        var x = x0
+        var any = false
+        for (i in 0..3) {
+            val l = input.slotLabel(i)
+            if (l.isEmpty()) continue
+            any = true
+            Gfx.fill.color = ACCENT; c.drawCircle(x + 6f, y - 1f, 6f, Gfx.fill)
+            val t = "P${i + 1}  ${l.take(20)}"
+            Gfx.label(c, t, x + 20f, y + 8f, 22f, SOFT, Paint.Align.LEFT, shadow = false, bold = false)
+            x += 20f + Gfx.textWidth(t, 22f, false) + 36f
+        }
+        if (!any) {
+            Gfx.fill.color = DIMC; c.drawCircle(x + 6f, y - 1f, 6f, Gfx.fill)
+            Gfx.label(c, "No controller yet. Press A on one to make it Player 1.", x + 20f, y + 8f, 22f, MUTED, Paint.Align.LEFT, shadow = false, bold = false)
+        }
+    }
+
+    /** A list row. Its box matches listMenu's tap area: (cx - width/2, y - 56) to (cx + width/2, y + 22). */
+    private fun row(c: Canvas, text: String, y: Float, selected: Boolean, width: Float, cx: Float = W / 2,
+                    value: String = "", toggle: Int = -1, centered: Boolean = false, arrows: Boolean = false) {
+        val l = cx - width / 2; val r = cx + width / 2; val t = y - 56f; val b = y + 22f
+        if (selected) {
+            Gfx.fill.color = 0x1CFFFFFF; c.drawRoundRect(l, t, r, b, 18f, 18f, Gfx.fill)
+            if (!centered) { Gfx.fill.color = ACCENT; c.drawRoundRect(l + 12f, t + 24f, l + 18f, b - 24f, 3f, 3f, Gfx.fill) }
+        }
+        val col = if (selected) TEXT else 0xFF8A8F8B.toInt()
+        val ty = (t + b) / 2 + 13f
+        if (centered) Gfx.label(c, text, cx, ty, 38f, col, shadow = false)
+        else Gfx.label(c, text, l + 40f, ty, 34f, col, Paint.Align.LEFT, shadow = false)
+        if (toggle >= 0) switch(c, r - 30f - 72f, (t + b) / 2, toggle == 1, selected)
+        else if (value.isNotEmpty()) {
+            val v = if (selected && arrows) "‹   $value   ›" else value
+            Gfx.label(c, v, r - 30f, ty - 2f, 28f, if (selected) ACCENT else DIMC, Paint.Align.RIGHT, shadow = false, bold = false)
+        }
+    }
+
+    private fun switch(c: Canvas, x: Float, cy: Float, on: Boolean, hi: Boolean) {
+        val w = 72f; val h = 36f
+        Gfx.fill.color = if (on) Gfx.alpha(ACCENT, if (hi) 0.95f else 0.6f) else 0x2EFFFFFF
+        c.drawRoundRect(x, cy - h / 2, x + w, cy + h / 2, h / 2, h / 2, Gfx.fill)
+        Gfx.fill.color = if (on) BG else 0xFFBFC4C0.toInt()
+        c.drawCircle(if (on) x + w - h / 2 else x + h / 2, cy, h / 2 - 5f, Gfx.fill)
+    }
+
+    private fun card(c: Canvas, l: Float, t: Float, r: Float, b: Float, hi: Boolean = false, radius: Float = 24f) {
+        Gfx.fill.color = CARD; c.drawRoundRect(l, t, r, b, radius, radius, Gfx.fill)
+        Gfx.stroke.color = if (hi) Gfx.alpha(ACCENT, 0.9f) else LINE; Gfx.stroke.strokeWidth = if (hi) 3f else 2f
+        c.drawRoundRect(l, t, r, b, radius, radius, Gfx.stroke)
+    }
+
+    /** Pill button: filled when it's the one selected / ready to press. */
+    private fun pill(c: Canvas, l: Float, t: Float, r: Float, b: Float, text: String, filled: Boolean, size: Float = 40f) {
+        val rad = (b - t) / 2
+        if (filled) { Gfx.fill.color = ACCENT; c.drawRoundRect(l, t, r, b, rad, rad, Gfx.fill) }
+        else {
+            Gfx.fill.color = 0x14FFFFFF; c.drawRoundRect(l, t, r, b, rad, rad, Gfx.fill)
+            Gfx.stroke.color = LINE; Gfx.stroke.strokeWidth = 2f; c.drawRoundRect(l, t, r, b, rad, rad, Gfx.stroke)
+        }
+        Gfx.label(c, text, (l + r) / 2, (t + b) / 2 + size * 0.36f, size, if (filled) BG else SOFT, shadow = false)
+    }
+
+    private fun menuItem(c: Canvas, text: String, y: Float, selected: Boolean, width: Float = 800f, cx: Float = W / 2) =
+        row(c, text, y, selected, width, cx, centered = true)
+
+    private fun drawPause(c: Canvas) {
+        dim(c, 190)
+        card(c, W / 2 - 330f, 300f, W / 2 + 330f, 790f)
+        Gfx.label(c, "Paused", W / 2, 400f, 64f, TEXT, shadow = false)
+        if (pauseMsg.isNotEmpty()) Gfx.label(c, pauseMsg, W / 2, 445f, 26f, LOWCOL, shadow = false, bold = false)
+        for (i in pauseItems.indices) menuItem(c, pauseItems[i], 520f + i * 100f, i == idx, 540f)
+        footer(c, listOf("A" to "Select", "Start" to "Resume"))
+    }
+
+    private fun drawOver(c: Canvas) {
+        dim(c, 190)
+        if (mode == SURVIVAL) {
+            Gfx.label(c, "GAME OVER", W / 2, 200f, 24f, LOWCOL, shadow = false)
+            Gfx.label(c, "The bad nugs took the wall", W / 2, 285f, 76f, TEXT, shadow = false)
+            Gfx.label(c, "You made it to wave $wave   ·   best ever: wave $bestWave", W / 2, 345f, 32f, MUTED, shadow = false, bold = false)
+            val act = players.filter { it.active }
+            var x = W / 2 - (act.size - 1) * 200f
+            for (p in act) {
+                Gfx.nug(c, x, 590f, 70f, p.look, 0f, 0.3f, p.phase, true, 0f, 0, 1f, xmas)
+                Gfx.label(c, "P${p.idx + 1}", x, 745f, 30f, p.look.light, shadow = false)
+                Gfx.label(c, "${p.kills} knocked off", x, 785f, 26f, MUTED, shadow = false, bold = false)
+                x += 400f
+            }
+        } else {
+            val w = players[matchWinner.coerceAtLeast(0)]
+            Gfx.label(c, "MATCH OVER", W / 2, 180f, 24f, ACCENT, shadow = false)
+            Gfx.label(c, "${nameOf(w.idx)} wins", W / 2, 270f, 96f, w.look.light, shadow = false)
+            Gfx.label(c, players.filter { it.active }.joinToString("      ") { "P${it.idx + 1}  ${score[it.idx]}★  ${it.kos} KOs" },
+                W / 2, 335f, 30f, MUTED, shadow = false, bold = false)
+            val hop = abs(sin(time * 6f)) * 40f
+            Gfx.nug(c, W / 2, 600f - hop, 110f, w.look, 0f, 0.2f, w.phase, true, 0f, 0, 1f, xmas)
+        }
+        pill(c, W / 2 - 500f, 870f, W / 2 - 60f, 970f, "Play again", idx == 0)
+        pill(c, W / 2 + 60f, 870f, W / 2 + 500f, 970f, "Main menu", idx == 1)
+    }
+
     private fun drawTitle(c: Canvas) {
-        c.drawColor(0xFF0C0E0D.toInt())
-        Gfx.fill.color = 0xFF151716.toInt(); c.drawRect(0f, FLOOR, W, H, Gfx.fill)
+        c.drawColor(if (projector) Color.BLACK else BG)
+        Gfx.fill.color = 0xFF121514.toInt(); c.drawRect(0f, FLOOR, W, H, Gfx.fill)
         for (e in titleNugs) Gfx.nug(c, e.x, e.y, e.r, e.look, e.facing, 0f, e.phase, true, 0f, if (e.type == 1) 1 else 0, 1f, xmas && e.type == 0)
-        val bob = sin(time * 2f) * 6f
-        Gfx.label(c, "NUG OF WAR", W / 2, 230f + bob, 150f, 0xFFEDEFED.toInt(), shadow = false)
-        Gfx.label(c, "a wall brawler for nugs with little legs", W / 2, 305f, 36f, MUTED, shadow = false)
-        if (xmas) Gfx.label(c, "Merry Christmas", W / 2, 360f, 32f, LOWCOL, shadow = false)
-        for (i in titleItems.indices) menuItem(c, titleItems[i], 470f + i * 84f, i == idx, 760f)
-        Gfx.label(c, controllerStatus(), W / 2, 52f, 24f, 0xFFAAAAAA.toInt(), shadow = false)
+        val bob = sin(time * 2f) * 5f
+        Gfx.label(c, "NUG OF WAR", W / 2, 245f + bob, 150f, 0xFFEDEFED.toInt(), shadow = false)
+        Gfx.label(c, "a wall brawler for nugs with little legs", W / 2, 310f, 32f, MUTED, shadow = false, bold = false)
+        if (xmas) {
+            val t = "CHRISTMAS EDITION"
+            val w = Gfx.textWidth(t, 18f) + 36f
+            Gfx.stroke.color = Gfx.alpha(LOWCOL, 0.7f); Gfx.stroke.strokeWidth = 2f
+            c.drawRoundRect(W / 2 - w / 2, 340f, W / 2 + w / 2, 376f, 18f, 18f, Gfx.stroke)
+            Gfx.label(c, t, W / 2, 365f, 18f, LOWCOL, shadow = false)
+        }
+        for (i in titleItems.indices) menuItem(c, titleItems[i], 480f + i * 82f, i == idx, 560f)
+        playerDots(c, 40f, 48f)
+        val h = listOf("A" to "Select")
+        Gfx.hints(c, h, W - 40f - Gfx.hintsWidth(h), 48f)
         drawSnowAndSanta(c)
     }
 
     private fun drawSettings(c: Canvas) {
-        c.drawColor(0xFF0C0E0D.toInt())
-        Gfx.label(c, "SETTINGS", W / 2, 200f, 90f, Color.WHITE, shadow = false)
-        Gfx.label(c, "Projector Mode: pure black background so only the game lights up your wall", W / 2, 270f, 28f, MUTED, shadow = false)
-        val items = settingsItems()
-        for (i in items.indices) menuItem(c, items[i], 350f + i * 80f, i == idx, 820f)
-        Gfx.label(c, controllerStatus(), W / 2, 1000f, 26f, 0xFFAAAAAA.toInt(), shadow = false)
+        screen(c)
+        header(c, "Options", "Settings")
+        val rows = settingsRows()
+        for (i in rows.indices) {
+            val (label, value, toggle) = rows[i]
+            row(c, label, 360f + i * 80f, i == idx, 760f, 520f, value, toggle, arrows = true)
+        }
+        // right: what the selected row does, and a preview of the nug style
+        card(c, 1000f, 304f, 1780f, 942f)
+        val (label, _, _) = rows[idx.coerceIn(0, rows.size - 1)]
+        if (idx < settingsDesc.size - 1) {
+            Gfx.label(c, label, 1048f, 372f, 34f, TEXT, Paint.Align.LEFT, shadow = false)
+            var y = 420f
+            for (l in Gfx.wrap(settingsDesc[idx], 27f, 680f)) { Gfx.label(c, l, 1048f, y, 27f, MUTED, Paint.Align.LEFT, shadow = false, bold = false); y += 38f }
+        }
+        val look = Look.of(COLORS[0], 0, 11)
+        Gfx.nug(c, 1390f, 700f, 96f, look, 0.3f, 0.15f, time * 6f, false, 0f, 0, 1f, xmas)
+        Gfx.label(c, "${Look.STYLE_NAMES[Look.style]} style", 1390f, 880f, 24f, DIMC, shadow = false, bold = false)
+        footer(c, listOf("A" to "Change", "B" to "Back"))
         drawSnowAndSanta(c)
     }
 
     private fun drawWallMenu(c: Canvas) {
-        c.drawColor(0xFF0C0E0D.toInt())
-        Gfx.label(c, "WALL SETUP", W / 2, 180f, 90f, Color.WHITE, shadow = false)
-        val lines = arrayOf(
-            "1. Point the projector at your wall (a little room light helps you see your shelves).",
-            "2. Trace each shelf, frame or bit of furniture with the cursor.",
-            "   Thin lines become ledges you can jump up through. Tall boxes become solid blocks.",
-            "3. Save, then pick that wall as your arena.")
-        var y = 260f
-        for (l in lines) { Gfx.label(c, l, W / 2, y, 30f, MUTED, shadow = false); y += 44f }
-        val items = arrayOf(arenaLabel(0), arenaLabel(1), arenaLabel(2), "Back")
-        for (i in items.indices) menuItem(c, if (i < 3) "Edit ${items[i]}" else items[i], 520f + i * 90f, i == idx, 760f)
+        screen(c)
+        header(c, "Wall Setup", "Trace your wall", "Pick a slot, then trace each shelf, frame and piece of furniture you want to fight on.")
+        val sc = 468f / W
+        for (i in 0..2) {
+            val l = wallCardL(i); val sel = i == idx
+            card(c, l, 320f, l + 500f, 790f, sel)
+            val pl = l + 16f; val pt = 336f
+            Gfx.fill.color = Color.BLACK; c.drawRoundRect(pl, pt, pl + 468f, pt + H * sc, 12f, 12f, Gfx.fill)
+            val wall = loadWallCached(i)
+            drawPlats(c, wall, sc, pl, pt, outlineOnly = true)
+            if (wall.isEmpty()) Gfx.label(c, "Nothing traced yet", pl + 234f, pt + H * sc / 2 + 9f, 24f, DIMC, shadow = false, bold = false)
+            Gfx.label(c, ARENA_NAMES[i], l + 32f, 666f, 36f, if (sel) TEXT else SOFT, Paint.Align.LEFT, shadow = false)
+            Gfx.label(c, if (wall.isEmpty()) "Empty" else "${wall.size} platform" + (if (wall.size == 1) "" else "s"),
+                l + 32f, 708f, 26f, MUTED, Paint.Align.LEFT, shadow = false, bold = false)
+            Gfx.label(c, if (wall.isEmpty()) "Trace" else "Edit", l + 468f, 760f, 26f, if (sel) ACCENT else DIMC, Paint.Align.RIGHT, shadow = false)
+        }
+        val steps = arrayOf(
+            "Aim the projector at your wall. A little lamp light helps you see your shelves.",
+            "Trace shelves as thin lines (ledges you jump up through) and furniture as boxes (solid).",
+            "Save, then pick that wall as your arena. The boxes stay invisible while you play.")
+        for (i in 0..2) {
+            val l = wallCardL(i)
+            Gfx.stroke.color = Gfx.alpha(ACCENT, 0.8f); Gfx.stroke.strokeWidth = 2f
+            c.drawCircle(l + 20f, 852f, 18f, Gfx.stroke)
+            Gfx.label(c, "${i + 1}", l + 20f, 860f, 22f, ACCENT, shadow = false)
+            var y = 860f
+            for (ln in Gfx.wrap(steps[i], 24f, 430f)) { Gfx.label(c, ln, l + 56f, y, 24f, MUTED, Paint.Align.LEFT, shadow = false, bold = false); y += 32f }
+        }
+        footer(c, listOf("A" to "Edit", "B" to "Back"))
     }
 
     private fun drawEditor(c: Canvas) {
         c.drawColor(Color.BLACK)
         val s = Gfx.stroke; val f = Gfx.fill
-        s.color = 0x30FFFFFF; s.strokeWidth = 1f
+        s.strokeWidth = 1f
         run {
-            var x = 0f; while (x <= W) { c.drawLine(x, 0f, x, H, s); x += 60f }
-            var y = 0f; while (y <= H) { c.drawLine(0f, y, W, y, s); y += 60f }
+            var i = 0; var x = 0f
+            while (x <= W) { s.color = if (i % 4 == 0) 0x26FFFFFF else 0x12FFFFFF; c.drawLine(x, 0f, x, H, s); x += 60f; i++ }
+            i = 0; var y = 0f
+            while (y <= H) { s.color = if (i % 4 == 0) 0x26FFFFFF else 0x12FFFFFF; c.drawLine(0f, y, W, y, s); y += 60f; i++ }
         }
+        // snapping guides
+        s.color = Gfx.alpha(ACCENT, 0.55f); s.strokeWidth = 2f
+        for (gx in guidesX) c.drawLine(gx, 0f, gx, H, s)
+        for (gy in guidesY) c.drawLine(0f, gy, W, gy, s)
+
         val hv = if (held >= 0 || anchor != null) -1 else hovered(curX, curY)
         for ((i, p) in editRects.withIndex()) {
             val col = when {
                 i == held || (i == touchIdx && touchMode >= 2) -> ACCENT
-                i == sel -> 0xFF9FD0FF.toInt()
-                i == hv -> 0xFFE0C080.toInt()
-                else -> Color.WHITE
+                i == sel -> 0xFF9FC4E8.toInt()
+                i == hv -> 0xFFE0C890.toInt()
+                else -> 0xFFE8EAE8.toInt()
             }
-            f.color = Gfx.alpha(col, 0.18f); c.drawRect(p.l, p.t, p.r, p.b, f)
-            s.color = col; s.strokeWidth = 5f
+            f.color = Gfx.alpha(col, if (p.solid) 0.14f else 0.1f); c.drawRect(p.l, p.t, p.r, p.b, f)
+            s.color = col; s.strokeWidth = 4f
             if (p.solid) c.drawRect(p.l, p.t, p.r, p.b, s) else c.drawLine(p.l, p.t, p.r, p.t, s)
-            if (i == sel || i == held) {           // resize handle
+            val kind = if (p.solid) "block" else "ledge"
+            if (p.r - p.l > 70f) {
+                if (p.solid && p.b - p.t > 40f) Gfx.label(c, kind, p.l + 12f, p.t + 28f, 18f, Gfx.alpha(col, 0.6f), Paint.Align.LEFT, shadow = false, bold = false)
+                else Gfx.label(c, kind, p.l + 2f, p.t - 10f, 18f, Gfx.alpha(col, 0.6f), Paint.Align.LEFT, shadow = false, bold = false)
+            }
+            if (i == sel || i == held) {           // resize handle + size
                 f.color = col; c.drawCircle(p.r, p.b, 14f, f)
                 s.strokeWidth = 2f; s.color = Color.BLACK
                 c.drawLine(p.r - 6f, p.b - 6f, p.r + 6f, p.b + 6f, s)
-                Gfx.label(c, "${(p.r - p.l).toInt()} × ${(p.b - p.t).toInt()}", (p.l + p.r) / 2, p.t - 14f, 20f, col, shadow = false)
+                Gfx.label(c, "${(p.r - p.l).toInt()} × ${(p.b - p.t).toInt()}", p.r - 4f, p.b + 40f, 20f, col, Paint.Align.RIGHT, shadow = false, bold = false)
             }
         }
         s.color = 0x80FFFFFF.toInt(); s.strokeWidth = 3f
         c.drawLine(0f, FLOOR, W, FLOOR, s)
+        Gfx.label(c, "floor", 40f, FLOOR - 12f, 20f, DIMC, Paint.Align.LEFT, shadow = false, bold = false)
         anchor?.let { a ->
+            val cx = snapX(curX, -1); val cy = snapY(curY, -1)
             s.color = ACCENT; s.strokeWidth = 4f
-            c.drawRect(min(a[0], curX), min(a[1], curY), max(a[0], curX), max(a[1], curY), s)
+            c.drawRect(min(a[0], cx), min(a[1], cy), max(a[0], cx), max(a[1], cy), s)
+            f.color = Gfx.alpha(ACCENT, 0.12f); c.drawRect(min(a[0], cx), min(a[1], cy), max(a[0], cx), max(a[1], cy), f)
         }
         if (touchMode == 1) lastRaw?.let { r ->
             s.color = ACCENT; s.strokeWidth = 4f
             c.drawRect(min(r[0], r[2]), min(r[1], r[3]), max(r[0], r[2]), max(r[1], r[3]), s)
         }
-        s.color = Color.WHITE; s.strokeWidth = 3f
-        c.drawLine(curX - 40f, curY, curX + 40f, curY, s); c.drawLine(curX, curY - 40f, curX, curY + 40f, s)
-        c.drawCircle(curX, curY, 16f, s)
+        // cursor
+        s.color = Color.WHITE; s.strokeWidth = 2f
+        c.drawLine(curX - 34f, curY, curX - 10f, curY, s); c.drawLine(curX + 10f, curY, curX + 34f, curY, s)
+        c.drawLine(curX, curY - 34f, curX, curY - 10f, s); c.drawLine(curX, curY + 10f, curX, curY + 34f, s)
+        f.color = Color.WHITE; c.drawCircle(curX, curY, 3f, f)
 
-        Gfx.label(c, "Tracing ${ARENA_NAMES[editSlot]}  ·  ${editRects.size} platforms", 40f, 62f, 32f, Color.WHITE, Paint.Align.LEFT, shadow = false)
-        val help = when {
-            held >= 0 -> "Moving   Stick: move   Right stick: resize   A: drop   Y: copy   X: delete   B / L1: cancel move"
-            anchor != null -> "Drawing   Stick: drag out the box   A: finish   B: cancel"
-            else -> "Stick: cursor (push gently for precision)   A: draw a box, or pick up a box to move it   Y: copy   X: delete   L1: undo   B / Start: save"
+        // top toolbar (fades out when you're tracing up near it)
+        val dragging = touchMode in 1..3
+        val topFade = if (curY < 220f && (dragging || input.rawTouch() == null)) 0.22f else 1f
+        f.color = Color.argb((225 * topFade).toInt(), 13, 15, 14); c.drawRect(0f, 0f, W, 104f, f)
+        f.color = Gfx.alpha(Color.WHITE, 0.1f * topFade); c.drawRect(0f, 104f, W, 106f, f)
+        Gfx.label(c, "${ARENA_NAMES[editSlot]}", 40f, 52f, 30f, Gfx.alpha(TEXT, topFade), Paint.Align.LEFT, shadow = false)
+        val n = editRects.size
+        Gfx.label(c, "$n platform" + (if (n == 1) "" else "s") + "   ·   thin line = ledge, tall box = solid block",
+            40f, 86f, 21f, Gfx.alpha(MUTED, topFade), Paint.Align.LEFT, shadow = false, bold = false)
+        fun button(b: FloatArray, t: String, on: Boolean = true, primary: Boolean = false) {
+            val rad = (b[3] - b[1]) / 2
+            if (primary) { f.color = Gfx.alpha(ACCENT, topFade); c.drawRoundRect(b[0], b[1], b[2], b[3], rad, rad, f) }
+            else {
+                f.color = Gfx.alpha(Color.WHITE, (if (on) 0.1f else 0.04f) * topFade); c.drawRoundRect(b[0], b[1], b[2], b[3], rad, rad, f)
+            }
+            val tc = if (primary) BG else if (on) SOFT else DIMC
+            Gfx.label(c, t, (b[0] + b[2]) / 2, (b[1] + b[3]) / 2 + 11f, 30f, Gfx.alpha(tc, topFade), shadow = false)
         }
-        Gfx.label(c, help, W / 2, 128f, 24f, MUTED, shadow = false)
-        Gfx.label(c, "Touch: drag empty space to draw · drag a box to move it · tap a box, then drag its corner dot to resize", W / 2, 162f, 22f, MUTED, shadow = false)
-        fun button(b: FloatArray, t: String, on: Boolean = true) {
-            f.color = if (on) 0x30FFFFFF else 0x12FFFFFF; c.drawRoundRect(b[0], b[1], b[2], b[3], 26f, 26f, f)
-            Gfx.label(c, t, (b[0] + b[2]) / 2, b[3] - 22f, 32f, if (on) Color.WHITE else MUTED, shadow = false)
+        button(btnSave, "Save", primary = true); button(btnUndo, "Undo", undoStack.isNotEmpty())
+        if (sel >= 0) { button(btnDel, "Delete"); button(btnCopy, "Copy") }
+
+        // bottom: what the buttons do right now
+        val hints = when {
+            held >= 0 -> listOf("Stick" to "Move", "R-Stick" to "Resize", "A" to "Drop", "Y" to "Copy", "X" to "Delete", "B" to "Cancel")
+            anchor != null -> listOf("Stick" to "Size", "A" to "Finish box", "B" to "Cancel")
+            hv >= 0 -> listOf("A" to "Pick up", "Y" to "Copy", "X" to "Delete", "LB" to "Undo", "B" to "Save")
+            else -> listOf("Stick" to "Move cursor", "A" to "Start a box", "LB" to "Undo", "B" to "Save and exit")
         }
-        button(btnSave, "SAVE"); button(btnUndo, "UNDO", undoStack.isNotEmpty())
-        if (sel >= 0) { button(btnDel, "DELETE"); button(btnCopy, "COPY") }
-        if (editMsgT > 0f) Gfx.label(c, editMsg, W / 2, FLOOR - 40f, 30f, Gfx.alpha(Color.WHITE, editMsgT.coerceAtMost(1f)), shadow = false)
-        Gfx.label(c, "floor", 40f, FLOOR - 10f, 22f, MUTED, Paint.Align.LEFT, shadow = false)
+        val botFade = if (curY > 900f) 0.22f else 1f
+        val hw = Gfx.hintsWidth(hints, 22f)
+        f.color = Color.argb((225 * botFade).toInt(), 13, 15, 14)
+        c.drawRoundRect(W / 2 - hw / 2 - 28f, 968f, W / 2 + hw / 2 + 28f, 1028f, 30f, 30f, f)
+        Gfx.hints(c, hints, W / 2 - hw / 2, 998f, 22f, Gfx.alpha(Color.WHITE, botFade), Gfx.alpha(0xFFA9AEA9.toInt(), botFade))
+        if (editMsgT > 0f) {
+            val a = editMsgT.coerceAtMost(1f)
+            val w = Gfx.textWidth(editMsg, 26f, false) + 48f
+            f.color = Color.argb((200 * a).toInt(), 30, 34, 32); c.drawRoundRect(W / 2 - w / 2, 892f, W / 2 + w / 2, 944f, 26f, 26f, f)
+            Gfx.label(c, editMsg, W / 2, 927f, 26f, Gfx.alpha(Color.WHITE, a), shadow = false, bold = false)
+        }
     }
 
     private fun drawArenaSelect(c: Canvas) {
-        c.drawColor(0xFF0C0E0D.toInt())
-        Gfx.label(c, if (mode == BRAWL) "VERSUS BRAWL" else "BAD NUG SURVIVAL", W / 2 - 420f, 170f, 64f, Color.WHITE, shadow = false)
-        Gfx.label(c, "Pick your arena", W / 2 - 420f, 220f, 32f, MUTED, shadow = false)
-        for (i in ARENA_NAMES.indices) menuItem(c, arenaLabel(i), 290f + i * 92f, i == idx, 620f, W / 2 - 420f)
-        val sc = 0.42f; val ox = 1060f; val oy = 260f
-        Gfx.stroke.color = 0x40FFFFFF; Gfx.stroke.strokeWidth = 2f
-        c.drawRect(ox, oy, ox + W * sc, oy + H * sc, Gfx.stroke)
-        val prev = if (idx < 3) loadWallCached(idx) else preset(idx)
-        drawPlats(c, prev, sc, ox, oy, outlineOnly = false)
-        if (prev.isEmpty()) Gfx.label(c, "Nothing traced yet: go to Wall Setup", ox + W * sc / 2, oy + H * sc / 2, 28f, MUTED, shadow = false)
-        Gfx.label(c, "A: choose   B: back", W / 2, 1030f, 28f, MUTED, shadow = false)
+        screen(c)
+        header(c, if (mode == BRAWL) "Versus Brawl" else "Bad Nug Survival", "Choose an arena")
+        for (i in ARENA_NAMES.indices) {
+            val meta = if (i < 3) { val n = loadWallCached(i).size; if (n == 0) "empty" else "$n traced" } else "preset"
+            row(c, ARENA_NAMES[i], 360f + i * 82f, i == idx, 640f, 460f, meta)
+        }
+        val l = 880f; val t = 304f; val r = 1780f
+        val sc = (r - l - 32f) / W
+        val b = t + 32f + H * sc
+        card(c, l, t, r, b)
+        Gfx.fill.color = Color.BLACK; c.drawRoundRect(l + 16f, t + 16f, r - 16f, b - 16f, 12f, 12f, Gfx.fill)
+        val sel = idx.coerceIn(0, ARENA_NAMES.size - 1)
+        val prev = if (sel < 3) loadWallCached(sel) else preset(sel)
+        drawPlats(c, prev, sc, l + 16f, t + 16f, outlineOnly = false)
+        val desc = when {
+            sel < 3 && prev.isEmpty() -> "Nothing traced here yet. Set it up in Wall Setup first."
+            sel < 3 -> "Your own wall. The boxes stay invisible while you play, so your real shelves are the platforms."
+            else -> "A built-in layout, for a TV, a monitor or a blank wall."
+        }
+        var y = b + 56f
+        for (ln in Gfx.wrap(desc, 26f, r - l)) { Gfx.label(c, ln, l, y, 26f, MUTED, Paint.Align.LEFT, shadow = false, bold = false); y += 36f }
+        footer(c, listOf("A" to "Choose", "B" to "Back"))
     }
 
     private var wallCacheSlot = -1
@@ -1913,56 +2148,86 @@ class Game(
     }
 
     private fun drawHelp(c: Canvas) {
-        c.drawColor(0xFF0C0E0D.toInt())
-        Gfx.label(c, "HOW TO PLAY", W / 2, 120f, 76f, Color.WHITE, shadow = false)
-        val lines = arrayOf(
-            "SET UP: plug your phone / TV box into the projector, aim it at a wall and trace your shelves in Wall Setup.",
-            "VERSUS BRAWL: 2 to 4 players, 3 lives each. Knock the other nugs out. Win 2 rounds to win the match.",
-            "Every round after the first has a twist: jetpacks, low gravity, rockets only, swords, barrels, hot floor...",
-            "BAD NUG SURVIVAL: team up against waves of brown and yellow bad nugs. Every 5th wave: a Moldy Mega Nug.",
-            "The more damage you've taken, the further you fly. Getting slammed into a wall hurts!",
-            "",
-            "A = jump (press again in the air to double jump, hold down + A to drop through a ledge)",
-            "X / R1 / right trigger = attack or use your weapon     Y = pick up, swap or throw your weapon",
-            "B / L1 / left trigger = block. Tap it just before a hit lands to PARRY (stuns them, reflects shots)",
-            "Up + attack = uppercut. Right stick aims guns (or hold up/down). START = pause.",
-            "",
-            "Weapons drop from the top: sword, seed blaster, grenades, rocket launcher. Christmas: Santa drops presents!",
-            "First controller to press a button is Player 1, then 2, 3, 4. Keyboard: P1 WASD+Space/F/G/H, P2 arrows+Enter."
-        )
-        var y = 210f
-        for ((i, l) in lines.withIndex()) { Gfx.label(c, l, W / 2, y, 29f, if (i in 6..9) SOFT else MUTED, shadow = false); y += 56f }
-        Gfx.label(c, "Press A or tap to go back", W / 2, 1040f, 30f, Color.WHITE, shadow = false)
+        screen(c)
+        header(c, "Guide", "How to play")
+        val sections = arrayOf(
+            "Set up" to "Plug your phone, TV box or PC into the projector and aim it at a wall. In Wall Setup, trace your shelves, frames and furniture. They become the platforms, and stay invisible while you play.",
+            "Versus Brawl" to "2 to 4 players, 3 lives each. Knock the other nugs off the wall, and win 2 rounds to take the match. Later rounds get a twist: jetpacks, low gravity, rockets only and more.",
+            "Bad Nug Survival" to "Team up against waves of bad nugs climbing your wall. Every 5th wave brings a Moldy Mega Nug.",
+            "Tips" to "The more damage you've taken, the further you fly. Tap block just before a hit to parry it. Weapons drop in from the top, and at Christmas Santa drops presents.")
+        var y = 340f
+        for ((h, body) in sections) {
+            Gfx.label(c, h, 140f, y, 30f, TEXT, Paint.Align.LEFT, shadow = false)
+            y += 42f
+            for (ln in Gfx.wrap(body, 25f, 760f)) { Gfx.label(c, ln, 140f, y, 25f, MUTED, Paint.Align.LEFT, shadow = false, bold = false); y += 35f }
+            y += 30f
+        }
+        card(c, 1000f, 304f, 1780f, 942f)
+        Gfx.label(c, "Controls", 1048f, 372f, 34f, TEXT, Paint.Align.LEFT, shadow = false)
+        val ctl = arrayOf(
+            "Stick" to "Move (D-pad works too)",
+            "A" to "Jump, again in the air to double jump",
+            "X" to "Attack or use your weapon (RB, RT)",
+            "B" to "Block, tap right before a hit to parry (LB, LT)",
+            "Y" to "Pick up, swap or throw a weapon",
+            "R-Stick" to "Aim guns",
+            "Start" to "Pause")
+        y = 440f
+        for ((k, l) in ctl) {
+            Gfx.glyph(c, k, 1048f, y - 8f, 22f)
+            Gfx.label(c, l, 1180f, y, 25f, SOFT, Paint.Align.LEFT, shadow = false, bold = false)
+            y += 58f
+        }
+        y += 10f
+        for (ln in listOf("Down + A drops through a ledge. Up + attack is an uppercut.",
+                          "Keyboard P1: WASD, Space, F, G, H.  P2: arrows, Enter, . / ;",
+                          "The first controller to press a button is Player 1.")) {
+            Gfx.label(c, ln, 1048f, y, 22f, MUTED, Paint.Align.LEFT, shadow = false, bold = false); y += 34f
+        }
+        footer(c, listOf("A" to "Back"))
         drawSnowAndSanta(c)
     }
 
     private fun drawLobby(c: Canvas) {
-        c.drawColor(0xFF0C0E0D.toInt())
-        Gfx.label(c, if (mode == BRAWL) "VERSUS BRAWL" else "BAD NUG SURVIVAL", W / 2, 100f, 64f, Color.WHITE, shadow = false)
-        Gfx.label(c, "Arena: ${ARENA_NAMES[arena]}  ·  each player presses A on their controller to join", W / 2, 150f, 30f, MUTED, shadow = false)
+        screen(c)
+        Gfx.label(c, (if (mode == BRAWL) "Versus Brawl" else "Bad Nug Survival").uppercase() + "   ·   " + ARENA_NAMES[arena].uppercase(),
+            140f, 116f, 22f, ACCENT, Paint.Align.LEFT, shadow = false)
+        Gfx.label(c, "Pick your nug", 136f, 190f, 66f, TEXT, Paint.Align.LEFT, shadow = false)
         for (p in 0..3) {
-            val l = panelL(p)
-            Gfx.panel(c, l, 190f, l + 420f, 850f)
-            val cx = l + 210f
-            Gfx.label(c, "PLAYER ${p + 1}", cx, 250f, 44f, Color.WHITE, shadow = false)
+            val l = panelL(p); val cx = l + 210f
             if (!joined[p]) {
-                Gfx.label(c, "Press A to join", cx, 520f, 40f, MUTED, shadow = false)
+                Gfx.stroke.color = LINE; Gfx.stroke.strokeWidth = 2f
+                c.drawRoundRect(l, 250f, l + 420f, 860f, 24f, 24f, Gfx.stroke)
+                Gfx.label(c, "PLAYER ${p + 1}", l + 32f, 304f, 22f, DIMC, Paint.Align.LEFT, shadow = false)
+                val w = Gfx.hintsWidth(listOf("A" to "Join"), 26f)
+                Gfx.hints(c, listOf("A" to "Join"), cx - w / 2, 555f, 26f, SOFT, SOFT)
                 continue
             }
             val look = Look.of(COLORS[colorIdx[p]], shapeIdx[p], 11 + p * 7 + colorIdx[p])
-            val hop = if (ready[p]) abs(sin(time * 7f + p)) * 26f else 0f
-            Gfx.nug(c, cx, 440f - hop, 92f, look, 0.4f, 0.2f, time * 8f, ready[p], 0f, 0, 1f, xmas)
-            Gfx.label(c, "<  ${COLOR_NAMES[colorIdx[p]]}  >", cx, 630f, 36f, look.light, shadow = false)
-            Gfx.label(c, SHAPE_NAMES[shapeIdx[p]], cx, 685f, 30f, Color.WHITE, shadow = false)
+            card(c, l, 250f, l + 420f, 860f, ready[p])
+            Gfx.fill.color = look.color; c.drawRoundRect(l + 32f, 268f, l + 92f, 274f, 3f, 3f, Gfx.fill)
+            Gfx.label(c, "PLAYER ${p + 1}", l + 32f, 310f, 22f, SOFT, Paint.Align.LEFT, shadow = false)
             val pad = input.slotLabel(p)
-            Gfx.label(c, if (pad.isEmpty()) (if (p < 2) "keyboard / touch" else "") else pad.take(26), cx, 740f, 22f, 0xFF8F948F.toInt(), shadow = false)
-            Gfx.label(c, if (ready[p]) "READY!" else "A = ready", cx, 810f, 36f, if (ready[p]) ACCENT else SOFT, shadow = false)
+            Gfx.label(c, if (pad.isEmpty()) (if (p < 2) "keyboard" else "") else pad.take(22), l + 388f, 310f, 20f, DIMC,
+                Paint.Align.RIGHT, shadow = false, bold = false)
+            val hop = if (ready[p]) abs(sin(time * 7f + p)) * 26f else 0f
+            Gfx.nug(c, cx, 500f - hop, 92f, look, 0.4f, 0.2f, time * 8f, ready[p], 0f, 0, 1f, xmas)
+            Gfx.label(c, "‹", l + 44f, 680f, 40f, DIMC, shadow = false, bold = false)
+            Gfx.label(c, "›", l + 376f, 680f, 40f, DIMC, shadow = false, bold = false)
+            Gfx.label(c, COLOR_NAMES[colorIdx[p]], cx, 676f, 34f, look.light, shadow = false)
+            Gfx.label(c, SHAPE_NAMES[shapeIdx[p]], cx, 716f, 24f, MUTED, shadow = false, bold = false)
+            if (ready[p]) pill(c, l + 110f, 770f, l + 310f, 830f, "Ready", true, 30f)
+            else {
+                val w = Gfx.hintsWidth(listOf("A" to "Ready"), 24f)
+                Gfx.hints(c, listOf("A" to "Ready"), cx - w / 2, 800f, 24f, SOFT, SOFT)
+            }
         }
-        Gfx.fill.color = 0x30FFFFFF
-        c.drawRoundRect(W / 2 - 220, 900f, W / 2 + 220, 1010f, 50f, 50f, Gfx.fill)
         val need = mode == BRAWL && joined.count { it } < 2
-        Gfx.label(c, if (lobbyCountdown > 0f) "Starting..." else if (need) "Need 2+ players" else "START", W / 2, 975f, 46f, Color.WHITE, shadow = false)
-        Gfx.label(c, "left/right: colour   up/down: shape   B: back", 60f, 1050f, 24f, MUTED, Paint.Align.LEFT, shadow = false)
+        val can = lobbyCanStart()
+        pill(c, W / 2 - 220f, 900f, W / 2 + 220f, 990f,
+            if (lobbyCountdown > 0f) "Starting…" else if (need) "Need 2+ players" else "Start", can && !need, 38f)
+        val h = listOf("Stick" to "Colour and shape", "A" to "Join / ready", "B" to "Back", "Start" to "Start")
+        Gfx.hints(c, h, W / 2 - Gfx.hintsWidth(h, 20f) / 2, 1040f, 20f)
         drawSnowAndSanta(c)
     }
 }

@@ -275,15 +275,72 @@ object Gfx {
     )
     fun alpha(c: Int, a: Float) = Color.argb((a.coerceIn(0f, 1f) * 255).toInt(), Color.red(c), Color.green(c), Color.blue(c))
 
-    fun label(c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int, align: Paint.Align = Paint.Align.CENTER, shadow: Boolean = true) {
-        text.textSize = size
-        text.textAlign = align
+    val textReg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL)
+    }
+
+    fun label(c: Canvas, s: String, x: Float, y: Float, size: Float, color: Int, align: Paint.Align = Paint.Align.CENTER,
+              shadow: Boolean = true, bold: Boolean = true) {
+        val t = if (bold) text else textReg
+        t.textSize = size
+        t.textAlign = align
         if (shadow) {
-            text.color = Color.argb(160, 0, 0, 0)
-            c.drawText(s, x + size * 0.06f, y + size * 0.06f, text)
+            t.color = Color.argb(160, 0, 0, 0)
+            c.drawText(s, x + size * 0.06f, y + size * 0.06f, t)
         }
-        text.color = color
-        c.drawText(s, x, y, text)
+        t.color = color
+        c.drawText(s, x, y, t)
+    }
+
+    fun textWidth(s: String, size: Float, bold: Boolean = true): Float {
+        val t = if (bold) text else textReg
+        t.textSize = size
+        return t.measureText(s)
+    }
+
+    /** Splits [s] into lines no wider than [width]. */
+    fun wrap(s: String, size: Float, width: Float, bold: Boolean = false): List<String> {
+        val out = ArrayList<String>()
+        var line = ""
+        for (w in s.split(' ')) {
+            val tryLine = if (line.isEmpty()) w else "$line $w"
+            if (line.isNotEmpty() && textWidth(tryLine, size, bold) > width) { out.add(line); line = w } else line = tryLine
+        }
+        if (line.isNotEmpty()) out.add(line)
+        return out
+    }
+
+    /** A controller button chip ("A", "B", "LB", "Start", "Stick"...). Returns its width. */
+    fun glyph(c: Canvas, key: String, x: Float, cy: Float, size: Float = 22f, color: Int = Color.WHITE): Float {
+        val h = size * 1.55f
+        val w = if (key.length == 1) h else textWidth(key, size * 0.72f) + size * 1.1f
+        fill.color = Color.argb(28, 255, 255, 255)
+        c.drawRoundRect(x, cy - h / 2, x + w, cy + h / 2, h / 2, h / 2, fill)
+        stroke.color = alpha(color, 0.55f); stroke.strokeWidth = 2f
+        c.drawRoundRect(x, cy - h / 2, x + w, cy + h / 2, h / 2, h / 2, stroke)
+        label(c, key, x + w / 2, cy + size * (if (key.length == 1) 0.36f else 0.26f), if (key.length == 1) size else size * 0.72f, color, shadow = false)
+        return w
+    }
+
+    /** Width of a row of button hints, so it can be right-aligned or centred. */
+    fun hintsWidth(hints: List<Pair<String, String>>, size: Float = 22f): Float {
+        var w = 0f
+        for ((k, l) in hints) {
+            val h = size * 1.55f
+            w += (if (k.length == 1) h else textWidth(k, size * 0.72f) + size * 1.1f) + 10f + textWidth(l, size, false) + 34f
+        }
+        return w - 34f
+    }
+
+    /** Draws button hints like (A) Select  (B) Back, starting at [x]. */
+    fun hints(c: Canvas, hints: List<Pair<String, String>>, x: Float, cy: Float, size: Float = 22f, color: Int = Color.WHITE, textColor: Int = 0xFFA9AEA9.toInt()) {
+        var cx = x
+        for ((k, l) in hints) {
+            cx += glyph(c, k, cx, cy, size, color) + 10f
+            label(c, l, cx, cy + size * 0.36f, size, textColor, Paint.Align.LEFT, shadow = false, bold = false)
+            cx += textWidth(l, size, false) + 34f
+        }
     }
 
     fun bar(c: Canvas, x: Float, y: Float, w: Float, h: Float, frac: Float, color: Int) {
