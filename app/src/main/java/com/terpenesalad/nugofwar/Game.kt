@@ -1497,11 +1497,13 @@ class Game(
         while (gy < FLOOR) { var gx = 40f; while (gx < W) { c.drawCircle(gx, gy, 2f, Gfx.fill); gx += 80f }; gy += 80f }
     }
 
-    private fun drawPlats(c: Canvas, list: List<Plat>, scale: Float = 1f, ox: Float = 0f, oy: Float = 0f, outlineOnly: Boolean = projector) {
+    private fun drawPlats(c: Canvas, list: List<Plat>, scale: Float = 1f, ox: Float = 0f, oy: Float = 0f, outlineOnly: Boolean = projector, hidden: Boolean = false) {
         val f = Gfx.fill; val s = Gfx.stroke
         for ((k, p) in list.withIndex()) {
             val l = ox + p.l * scale; val t = oy + p.t * scale; val r = ox + p.r * scale; val b = oy + p.b * scale
-            if (outlineOnly) {
+            if (hidden) {
+                // traced from the real wall: the shelves themselves are the platforms, so draw nothing
+            } else if (outlineOnly) {
                 s.color = if (p.solid) 0x38FFFFFF else 0x60FFFFFF; s.strokeWidth = if (p.solid) 2f else 3f
                 if (p.solid) c.drawRoundRect(l, t, r, b, 6f, 6f, s) else c.drawLine(l, t, r, t, s)
             } else {
@@ -1524,13 +1526,16 @@ class Game(
         }
     }
 
+    /** My Wall 1-3 are traced from real furniture, so their boxes stay invisible in play. */
+    private fun tracedWall() = arena in 0..2
+
     private fun drawWorld(c: Canvas) {
         backdrop(c)
         val f = Gfx.fill
         if (twist == TW_HOTFLOOR && mode == BRAWL) {
             f.color = Gfx.alpha(LOWCOL, 0.35f + 0.15f * sin(time * 5f)); c.drawRect(0f, FLOOR - 6f, W, H, f)
-        } else if (!projector) { f.color = 0xFF1A1C1B.toInt(); c.drawRect(0f, FLOOR, W, H, f) }
-        drawPlats(c, plats)
+        } else if (!projector && !tracedWall()) { f.color = 0xFF1A1C1B.toInt(); c.drawRect(0f, FLOOR, W, H, f) }
+        drawPlats(c, plats, hidden = tracedWall())
 
         for (it in items) drawItem(c, it)
         for (e in enemies) drawBody(c, e, 1, false)
