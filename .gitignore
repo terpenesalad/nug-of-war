@@ -8,3 +8,5 @@ local.properties
 captures/
 tools/preview/build/
 tools/preview/libs/
+desktop/shots/
+desktop/icons/

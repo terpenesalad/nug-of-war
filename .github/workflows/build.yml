@@ -46,5 +46,81 @@ jobs:
           TAG="v1.0.${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" NugOfWar.apk \
             --title "Nug of War $TAG" \
-            --notes "Download **NugOfWar.apk** below and open it on your Android device / TV box. See the README for install and controller steps." \
+            --notes "Android: download **NugOfWar.apk** and open it on your phone / TV box. Windows: download **NugOfWar-Setup.exe** (installer) or **NugOfWar-Windows.zip** (portable, unzip and run NugOfWar.exe). See the README for install and controller steps." \
             --latest
+
+  windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Build the desktop game and render a check on Windows
+        shell: bash
+        run: |
+          ./gradlew --no-daemon -p desktop stageJars
+          ./gradlew --no-daemon -p desktop run --args="--shots shots"
+          ./gradlew --no-daemon -p desktop run --args="--icons icons"
+          cat desktop/shots/desktop_timing.txt
+
+      - name: Make the .ico
+        shell: bash
+        run: |
+          python - <<'PY'
+          import struct
+          sizes = [256, 64, 48, 32, 16]
+          pngs = [open(f"desktop/icons/icon_{s}.png", "rb").read() for s in sizes]
+          out = struct.pack("<HHH", 0, 1, len(pngs))
+          off = 6 + 16 * len(pngs)
+          for s, p in zip(sizes, pngs):
+              out += struct.pack("<BBBBHHII", s % 256, s % 256, 0, 0, 1, 32, len(p), off)
+              off += len(p)
+          open("NugOfWar.ico", "wb").write(out + b"".join(pngs))
+          PY
+
+      - name: Package NugOfWar.exe (portable folder)
+        shell: bash
+        run: |
+          VER="1.0.${GITHUB_RUN_NUMBER}"
+          jpackage --type app-image --name NugOfWar --app-version "$VER" --vendor terpenesalad \
+            --input desktop/build/jars --main-jar nugofwar-desktop.jar \
+            --main-class com.terpenesalad.nugofwar.MainKt \
+            --icon NugOfWar.ico --java-options "-Xmx768m" --dest dist
+          powershell -Command "Compress-Archive -Path dist/NugOfWar -DestinationPath NugOfWar-Windows.zip"
+
+      - name: Package installer (NugOfWar-Setup.exe)
+        continue-on-error: true
+        shell: bash
+        run: |
+          VER="1.0.${GITHUB_RUN_NUMBER}"
+          jpackage --type exe --name NugOfWar --app-version "$VER" --vendor terpenesalad \
+            --app-image dist/NugOfWar --win-shortcut --win-menu --win-dir-chooser \
+            --win-upgrade-uuid 6f1c2a8e-5b7d-4e1f-9a3c-2d4b6e8f0a12 --dest installer
+          cp installer/*.exe NugOfWar-Setup.exe
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: NugOfWar-windows
+          path: |
+            NugOfWar-Windows.zip
+            NugOfWar-Setup.exe
+            desktop/shots/*.png
+
+      - name: Add to the GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.0.${GITHUB_RUN_NUMBER}"
+          FILES="NugOfWar-Windows.zip"
+          [ -f NugOfWar-Setup.exe ] && FILES="$FILES NugOfWar-Setup.exe"
+          gh release upload "$TAG" $FILES --clobber
+          cd desktop/shots && powershell -Command "Compress-Archive -Path *.png -DestinationPath ../../desktop-shots.zip -Force" && cd ../..
+          gh release upload preview desktop-shots.zip --clobber || true

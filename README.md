@@ -1,6 +1,6 @@
 # Nug of War
 
-A couch brawler for Android phones, TV boxes and projectors. Project it onto your wall, trace your
+A couch brawler for Android phones, TV boxes, projectors and Windows PCs. Project it onto your wall, trace your
 shelves and picture frames, and they become the platforms your nugs fight on. Minimal dark style,
 nugs with little legs.
 
@@ -15,9 +15,37 @@ nugs with little legs.
 - **Bad Nug Survival (1 to 4 players, co-op):** waves of brown and yellow bad nugs climb your wall. Every 5th wave is a Moldy Mega Nug.
 - **Christmas Mode:** snow, snow caps and fairy lights on your shelves, Santa hats, and Santa flying over dropping presents.
 - **Streamer Commentary:** a laid-back made-up streamer, *couchcaster*, reacts to the action with a quiet live chat.
-- **Settings:** Projector Mode (pure black background so only the game lights your wall), Christmas, Commentary, Sound.
+- **Settings:** Projector Mode (pure black background so only the game lights your wall), Christmas, Commentary, Nug style, Menu sounds, Game sounds.
 
-## 0. Hook up the projector
+## Windows PC version
+
+The same game runs on Windows 10 and 11. Plug the PC or laptop into the projector with HDMI, then:
+
+1. Open **https://github.com/terpenesalad/nug-of-war/releases/latest** and download one of these:
+   - **NugOfWar-Setup.exe** is an installer. Run it and it adds Nug of War to the Start menu and the desktop.
+   - **NugOfWar-Windows.zip** is portable. Right-click it, choose **Extract All**, open the folder and double-click **NugOfWar.exe**.
+2. Windows might show **"Windows protected your PC"**, because this is a hobby app with no paid code-signing certificate.
+   Click **More info**, then **Run anyway**. You only have to do this once.
+3. The game opens full screen. Press **F11** (or **Alt + Enter**) to switch between full screen and a window.
+   To quit, use **Quit** on the main menu.
+
+If the laptop screen and the projector show different things, press **Windows key + P** and pick **Duplicate**,
+or pick **Second screen only** to play just on the wall.
+
+**Controllers on Windows:** Xbox controllers work straight away over USB, the Xbox Wireless Adapter or Bluetooth.
+PS4 and PS5 controllers work over USB or Bluetooth too, with no extra software needed. Switch Pro and 8BitDo controllers
+also work (put 8BitDo in X-input mode: hold **Start + X** when turning it on). Up to 4 controllers.
+To pair one over Bluetooth, go to **Settings > Bluetooth & devices > Add device > Bluetooth**,
+put the controller in pairing mode (same buttons as in step 3 below), and pick it from the list.
+As on Android, the first controller to press a button is Player 1.
+
+**Keyboard and mouse:** two players can share one keyboard (see Controls below), and the mouse works in menus.
+In Wall Setup you can drag with the mouse to draw boxes and move them.
+
+Your settings and traced walls are saved in `%APPDATA%\NugOfWar`. To update, download the new version and
+install it over the old one (or replace the folder).
+
+## 0. Hook up the projector (Android)
 
 Any HDMI projector works. Plug the Android device into it: a TV box / Android projector runs the app directly;
 an Android phone needs a USB-C to HDMI adapter (the phone must support video out, most Samsung and Pixel phones do)
@@ -64,11 +92,12 @@ USB controllers (with an OTG adapter) work too.
 |---|---|---|---|
 | Move | Left stick / D-pad | WASD / Arrows | Drag on the outer side of your half |
 | Jump (again in the air = double jump, down + jump = drop through a ledge) | A | Space / Enter | JUMP |
-| Attack / use weapon (up + attack = uppercut) | X, R1 or right trigger | F / Right Ctrl | HIT |
-| Block (tap just before a hit = parry) | B, L1 or left trigger | G / Right Shift | BLOCK |
+| Attack / use weapon (up + attack = uppercut) | X, R1 or right trigger | F / Right Ctrl (PC: . ) | HIT |
+| Block (tap just before a hit = parry) | B, L1 or left trigger | G / Right Shift (PC: / ) | BLOCK |
 | Pick up, swap or throw weapon | Y | H / ; | walk over it |
 | Aim guns | Right stick, or hold up/down | | |
-| Pause | Start | Esc | pause icon top right |
+| Pause | Start | Esc or P | pause icon top right |
+| Full screen on/off (PC) | | F11 or Alt + Enter | |
 
 **Wall Setup controls (controller):**
 - Left stick moves the cursor. Push gently for fine control.
@@ -86,7 +115,10 @@ wall while the projector is on, and keep the projector still afterwards (if it m
 
 ## Building it yourself
 
-Every push to `main` builds a new APK with GitHub Actions and publishes it as a release.
+Every push to `main` builds a new APK and the Windows version with GitHub Actions and publishes them as a release.
+The Windows version lives in `desktop/`. It runs the same game code with a small stand-in for Android's drawing layer
+(drawn with Skia through Skiko), SDL controllers through Jamepad, and is packaged with `jpackage`.
+To run it on a PC with JDK 17: `./gradlew -p desktop run`.
 To build locally: install Android Studio (or the Android SDK + JDK 17) and run `./gradlew assembleRelease`.
 
 `tools/preview` renders screenshots of the game on a normal computer with Robolectric (`gradle test`), and GitHub runs it on every push.

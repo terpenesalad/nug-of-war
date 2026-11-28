@@ -1799,7 +1799,7 @@ class Game(
         Gfx.label(c, "a wall brawler for nugs with little legs", W / 2, 305f, 36f, MUTED, shadow = false)
         if (xmas) Gfx.label(c, "Merry Christmas", W / 2, 360f, 32f, LOWCOL, shadow = false)
         for (i in titleItems.indices) menuItem(c, titleItems[i], 470f + i * 84f, i == idx, 760f)
-        Gfx.label(c, controllerStatus(), W / 2, 1000f, 26f, 0xFFAAAAAA.toInt(), shadow = false)
+        Gfx.label(c, controllerStatus(), W / 2, 52f, 24f, 0xFFAAAAAA.toInt(), shadow = false)
         drawSnowAndSanta(c)
     }
 
